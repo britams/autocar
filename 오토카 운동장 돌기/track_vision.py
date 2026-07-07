@@ -2,14 +2,37 @@
 """
 track_vision.py
 ──────────────────────────────────────────────────────────────
-카메라 영상으로 오토카의 위치를 추정하는 VisualOdometry를 담은 파일입니다.
+카메라 영상만 보고 "오토카가 얼마나 움직였는지" 대략 추정하는 파일입니다.
+이런 방식을 "Visual Odometry(영상 기반 주행거리 추정)"이라고 부릅니다.
 
-  - track_odometry.py 는 "모터 속도 + 조향각"으로 위치를 추정했다면,
-    여기서는 "카메라 영상이 프레임마다 얼마나 움직였는지"를 보고
-    위치를 추정합니다. 예를 들어 바닥의 무늬가 화면에서 왼쪽으로
-    움직였다면, 실제로는 오토카가 오른쪽으로 이동한 것입니다.
-  - 이런 방식을 "Visual Odometry(영상 기반 주행거리 추정)"이라고
-    부릅니다.
+왜 필요한가?
+  track_odometry.py는 "모터에 준 속도값 + 조향값"으로 위치를 계산합니다.
+  그런데 만약 바퀴가 미끄러지거나(헛돌거나), 모터 속도 보정값이 조금
+  안 맞으면 실제 위치와 계산된 위치가 조금씩 어긋날 수 있습니다.
+
+  카메라 영상으로도 "따로" 위치를 계산해두면, 두 값을 서로 비교해서
+  "둘이 비슷하게 나오는지" 확인할 수 있고, 나중에 두 값을 섞어서
+  (평균 내거나 서로 보정하는 방식으로) 더 정확한 위치를 만드는 데도
+  쓸 수 있습니다. 그래서 이 파일은 track_odometry.py를 "대체"하는 게
+  아니라 "보완"하는 역할입니다.
+
+  주의! 이 파일은 "라인트레이싱"(카메라로 바닥의 선을 찾아 따라가는 것)
+  용도가 아닙니다. 오로지 "오토카가 어느 쪽으로 얼마나 움직였는지"만
+  계산합니다.
+
+원리 (아주 쉽게 설명)
+  카메라로 사진을 계속 찍으면, 오토카가 움직일 때마다 사진 속 물체들의
+  위치도 화면 안에서 조금씩 움직입니다. 예를 들어 오토카가 오른쪽으로
+  움직이면, 화면 속 물체들은 반대로 왼쪽으로 흘러가는 것처럼 보입니다.
+  이 파일은 "이전 사진"과 "지금 사진"을 비교해서 화면 속 점들이 얼마나
+  움직였는지(=옵티컬 플로우, optical flow)를 계산하고, 그 움직임의
+  방향을 반대로 뒤집어서 "오토카가 움직인 방향"으로 사용합니다.
+
+  단점(정직하게 말씀드리면): 카메라 하나로는 실제 "몇 미터"를 움직였는지
+  정확히 알아낼 수 없습니다(전문 용어로 "스케일 문제"). 그래서 아래
+  METERS_PER_PIXEL 값으로 대략 맞춰서 추정할 뿐이며, track_odometry.py
+  보다 정밀하지 않습니다. "정확한 값"이 아니라 "비교/보완용 참고 값"으로
+  써주세요.
 ──────────────────────────────────────────────────────────────
 """
 
@@ -19,111 +42,105 @@ import numpy as np
 
 class VisualOdometry:
     """
-    카메라 영상만 보고 오토카의 (x, y) 이동 거리를 추정하는 클래스.
-
-    ── 원리 ──
-        이전 프레임에서 추적하기 좋은 점들(구석, 무늬 등)을 몇 개
-        골라둔 다음, 다음 프레임에서 그 점들이 어디로 이동했는지
-        추적합니다(Optical Flow, 광학 흐름). 점들이 평균적으로
-        얼마나 움직였는지를 보면 카메라(오토카)가 반대 방향으로 그만큼
-        움직였다는 걸 알 수 있습니다.
+    카메라 프레임을 계속 넣어주면, 화면 속 점들의 움직임을 보고
+    (x, y) 위치를 대략 추정해주는 클래스.
 
     ── 사용법 ──
         vo = VisualOdometry()
         ...(카메라에서 새 프레임을 받을 때마다)...
-        vo.update(frame_bgr)
+        vo.update(frame)   # frame: OpenCV로 읽은 BGR 이미지 한 장
         x, y = vo.x, vo.y
     """
 
-    # ────────────────────────────────────────────────────────
-    # 조정 가능한 값 - 실제 카메라/바닥 상황에 맞춰 조정하세요.
-    # ────────────────────────────────────────────────────────
+    # 한 번에 몇 개의 "추적하기 좋은 점(특징점)"을 화면에서 찾을지.
+    # - 값이 클수록: 점이 많아서 평균 계산이 더 안정적이지만 계산이 느려짐.
+    # - 값이 작을수록: 계산은 빠르지만 점이 너무 적으면 결과가 흔들릴 수 있음.
+    MAX_FEATURES = 200
 
-    # 화면에서 "픽셀 1개가 실제로 몇 미터인지"를 나타내는 보정값입니다.
-    # - 이 값은 카메라가 바닥에서 얼마나 높이/각도로 달려있는지에 따라
-    #   완전히 달라지므로, 반드시 실제로 보정해야 합니다.
-    # - 보정 방법: 오토카를 정확히 1m 앞으로 이동시킨 뒤, 그 동안
-    #   VisualOdometry가 측정한 이동 픽셀 수를 확인하고
-    #   PIXELS_TO_METERS = 1m / (측정된 픽셀 수) 로 계산해서 넣습니다.
-    # - 값이 클수록: 같은 픽셀 이동량에도 "더 많이 움직였다"고 계산합니다.
-    PIXELS_TO_METERS = 1.0 / 400.0
+    # 화면 속 점이 "픽셀 1칸"만큼 움직였을 때, 실제로는 몇 미터
+    # 움직인 것으로 볼지 정하는 보정값입니다. 카메라 화각/설치 높이/
+    # 렌즈에 따라 실제 값이 달라서, 아래 방법으로 직접 보정해야 합니다.
+    #   1) 오토카를 정확히 1m 직진시킨다.
+    #   2) 그때 이 값으로 계산된 이동 거리(vo.y 변화량)를 확인한다.
+    #   3) METERS_PER_PIXEL = 1m / (계산된 거리와 지금 값의 비율)
+    #      만큼 곱하거나 나눠서 다시 맞춘다.
+    # - 값이 클수록: 조금만 움직여도 이동 거리를 크게 계산합니다.
+    # - 값이 작을수록: 많이 움직여야 이동 거리가 조금 늘어납니다.
+    METERS_PER_PIXEL = 0.002
 
-    # 추적할 특징점(코너)을 최대 몇 개까지 찾을지.
-    # - 값이 클수록: 더 정확하지만 계산이 느려집니다(반응속도 저하).
-    # - 값이 작을수록: 더 빠르지만 바닥에 무늬가 적으면 추정이 불안정
-    #   해질 수 있습니다.
-    MAX_FEATURES = 60
+    # 추적 중이던 점이 이 개수보다 적게 남으면, 화면에서 새로 특징점을
+    # 다시 찾습니다. (점들이 화면 밖으로 나가거나 추적을 놓치면 점점
+    # 줄어들기 때문에, 너무 적어지기 전에 새로 채워 넣어야 계속 정확하게
+    # 움직임을 잴 수 있습니다.)
+    MIN_FEATURES_BEFORE_REFRESH = 30
 
     def __init__(self):
-        self.x = 0.0
-        self.y = 0.0
-        self._prev_gray = None
-        self._prev_points = None
-
-        # goodFeaturesToTrack(추적하기 좋은 점 찾기)에 쓰는 설정값
-        self._feature_params = dict(
-            maxCorners=self.MAX_FEATURES,
-            qualityLevel=0.2,
-            minDistance=7,
-            blockSize=7,
-        )
-        # calcOpticalFlowPyrLK(점 추적)에 쓰는 설정값
-        self._lk_params = dict(
-            winSize=(15, 15),
-            maxLevel=2,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
-        )
+        self.x = 0.0   # 카메라 영상만으로 추정한 x 좌표 (미터, 참고용)
+        self.y = 0.0   # 카메라 영상만으로 추정한 y 좌표 (미터, 참고용)
+        self._prev_gray = None      # 직전 프레임(흑백)
+        self._prev_points = None    # 직전 프레임에서 추적하던 점들
 
     def reset(self):
+        """위치를 (0, 0)으로 초기화하고, 다음 프레임부터 새로 추적을 시작합니다."""
         self.x = 0.0
         self.y = 0.0
         self._prev_gray = None
         self._prev_points = None
 
-    def update(self, frame_bgr):
-        """
-        새 카메라 프레임(BGR 컬러 이미지)을 넣으면, 이전 프레임과
-        비교해서 이동한 거리만큼 x, y를 갱신합니다.
-        영상이 흔들리거나 추적할 무늬가 없으면 이번 프레임은 건너뜁니다
-        (에러를 내지 않고 그냥 이전 위치를 유지합니다).
-        """
-        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-
-        if self._prev_gray is None:
-            self._prev_gray = gray
-            self._prev_points = cv2.goodFeaturesToTrack(gray, mask=None, **self._feature_params)
-            return
-
-        if self._prev_points is None or len(self._prev_points) < 4:
-            # 추적할 점이 너무 적으면(예: 바닥이 단색이라 무늬가 없음)
-            # 새로 점을 다시 찾아보고, 이번 프레임은 이동량 계산을 건너뜀
-            self._prev_gray = gray
-            self._prev_points = cv2.goodFeaturesToTrack(gray, mask=None, **self._feature_params)
-            return
-
-        new_points, status, _err = cv2.calcOpticalFlowPyrLK(
-            self._prev_gray, gray, self._prev_points, None, **self._lk_params
+    def _find_features(self, gray):
+        """화면에서 "추적하기 좋은 점(모서리/코너)"들을 새로 찾습니다."""
+        return cv2.goodFeaturesToTrack(
+            gray, maxCorners=self.MAX_FEATURES, qualityLevel=0.01, minDistance=7
         )
 
-        if new_points is None:
+    def update(self, frame):
+        """
+        새 카메라 프레임을 받아서 위치(x, y)를 갱신합니다.
+        frame: OpenCV로 읽은 컬러(BGR) 이미지 1장.
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # 처음 호출되는 경우 - 비교할 "이전 프레임"이 아직 없으므로
+        # 이번 프레임에서 특징점만 찾아두고 다음 호출을 기다립니다.
+        if self._prev_gray is None or self._prev_points is None or len(self._prev_points) < 5:
             self._prev_gray = gray
-            self._prev_points = cv2.goodFeaturesToTrack(gray, mask=None, **self._feature_params)
+            self._prev_points = self._find_features(gray)
             return
 
-        good_new = new_points[status == 1]
-        good_old = self._prev_points[status == 1]
+        # 이전 프레임의 점들이 이번 프레임에서 어디로 이동했는지 추적
+        # (Lucas-Kanade 옵티컬 플로우 방법)
+        new_points, status, _err = cv2.calcOpticalFlowPyrLK(
+            self._prev_gray, gray, self._prev_points, None
+        )
 
-        if len(good_new) >= 4:
-            # 추적된 점들이 평균적으로 이동한 픽셀 거리(화면 기준 dx, dy)
-            diff = good_new - good_old
-            dx_px = float(np.mean(diff[:, 0]))
-            dy_px = float(np.mean(diff[:, 1]))
+        # status가 1인 점만 "추적에 성공한 점"입니다. (화면 밖으로
+        # 나갔거나 흐릿해져서 놓친 점은 status가 0이라 걸러냅니다.)
+        found = status.flatten() == 1
+        good_new = new_points[found]
+        good_old = self._prev_points[found]
 
-            # 화면에서 오른쪽/아래로 움직인 것처럼 보이면, 실제 오토카는
-            # 반대 방향(왼쪽/앞)으로 움직인 것이므로 부호를 반대로 뒤집습니다.
-            self.x += -dx_px * self.PIXELS_TO_METERS
-            self.y += -dy_px * self.PIXELS_TO_METERS
+        if len(good_new) >= 5:
+            # 각 점이 (이전 → 지금) 사이에 이동한 픽셀 거리(dx, dy)
+            flow = good_new.reshape(-1, 2) - good_old.reshape(-1, 2)
 
-        # 다음 프레임을 위해 추적점을 다시 계산 (누적 오차 방지)
+            # 평균이 아니라 "중앙값(median)"을 쓰는 이유: 몇몇 점이 잘못
+            # 추적되어 엉뚱하게 튀는 값이 나와도, 중앙값은 그런 이상치에
+            # 잘 흔들리지 않습니다 (안정적인 대표값).
+            dx_px, dy_px = np.median(flow, axis=0)
+
+            # 카메라가 오토카 앞쪽을 보고 있다고 가정한 부호 규칙:
+            #  - 오토카가 오른쪽으로 이동하면 화면 속 물체는 왼쪽으로
+            #    흘러가 보입니다(dx_px가 음수) → 그래서 부호를 반대로
+            #    뒤집어서(-dx_px) "오토카의 오른쪽 이동"으로 사용합니다.
+            #  - 오토카가 앞으로(전진) 이동하면 화면 속 물체는 아래쪽으로
+            #    흘러가 보입니다(dy_px가 양수) → 마찬가지로 반대로
+            #    뒤집어서(-dy_px) "오토카의 전진"으로 사용합니다.
+            self.x += -dx_px * self.METERS_PER_PIXEL
+            self.y += -dy_px * self.METERS_PER_PIXEL
+
+        # 다음 번 비교를 위해 이번 프레임을 "이전 프레임"으로 저장
         self._prev_gray = gray
-        self._prev_points = cv2.goodFeaturesToTrack(gray, mask=None, **self._feature_params)
+        if len(good_new) < self.MIN_FEATURES_BEFORE_REFRESH:
+            self._prev_points = self._find_features(gray)
+        else:
+            self._prev_points = good_new.reshape(-1, 1, 2)

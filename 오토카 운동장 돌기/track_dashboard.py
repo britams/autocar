@@ -10,9 +10,11 @@ track_dashboard.py
        (나) 일정한 속력+조향으로 원을 그리며 도는 간단한 자동주행
   2) "운전 시작"(수동) 또는 "자동 주행 시작"(자동) 버튼을 누르면
      조종이 시작되면서 동시에 CDS(조도) 센서 값 + 위치 데이터 수집이
-     시작됩니다. 위치는 두 가지 방법으로 동시에 추정합니다.
+     시작됩니다. 위치는 두 가지 방법으로 함께 추정합니다.
        - 모터 속도 + 조향각 기반 위치 추정 (track_odometry.py)
        - 카메라 영상 기반 위치 추정, Visual Odometry (track_vision.py)
+         → 라인트레이싱(선 따라가기) 용도가 아니라, 오로지 위치 추정을
+           모터 기반 값과 서로 비교/보완하기 위한 참고용입니다.
   3) "정지" 버튼을 누르면 오토카가 멈추고, 수집도 즉시 종료되면서
      CSV 파일이 "csv 파일 모음" 폴더에 바로 저장됩니다.
   4) 웹 브라우저(대시보드)에서 실시간으로 주행 경로와 센서 값 그래프를
@@ -41,6 +43,13 @@ track_dashboard.py
          python3 track_dashboard.py
     4) 아무 컴퓨터/휴대폰 브라우저에서 아래 주소로 접속합니다.
          http://192.168.0.57:5000
+
+■ 이 프로그램은 오토카 "파워선"(모터/CAN 통신 보드 전원)이 빠져 있고
+  노트북과 젯슨 보드만 USB 케이블로 연결된 상태에서도 그대로 실행됩니다.
+  이런 경우 오토카/CDS 센서/카메라 중 연결 안 된 것들은 자동으로
+  "시뮬레이션 모드"로 동작하고, 나머지(예: 카메라만 연결된 경우)는
+  정상적으로 동작합니다. (하드웨어 연결 실패는 프로그램을 멈추지 않고
+  그 부분만 조용히 시뮬레이션으로 대체됩니다.)
 
 ■ 파일 구성
     track_dashboard.py  : 이 파일. Flask 웹 서버 + 대시보드 화면.
@@ -74,10 +83,11 @@ from track_vision import VisualOdometry
 # CDS(조도) 센서가 연결된 SPI ADC 채널 번호입니다.
 # - pop.Util 의 Cds 클래스는 SPI ADC 여러 채널(0~7) 중 하나에서 값을
 #   읽어오는데, 실제로 CDS 센서를 몇 번 채널에 꽂았는지에 따라 값이
-#   달라집니다. 대시보드를 켰을 때 CDS 값이 항상 0 이거나 이상하게
-#   나오면 이 번호를 0~7 사이에서 바꿔가며 실제로 빛을 손으로 가려보고
-#   값이 바뀌는 채널을 찾아주세요.
-CDS_ADC_CHANNEL = 0
+#   달라집니다. 실제 오토카에서 8개 채널을 모두 읽어보며 손으로 빛을
+#   가려서 테스트한 결과, 이 오토카는 7번 채널에 연결되어 있었습니다.
+#   (다른 오토카 개체라면 배선이 다를 수 있으니, 값이 안 바뀌면 다시
+#   0~7 사이에서 테스트해보세요.)
+CDS_ADC_CHANNEL = 7
 
 # CDS 센서 값을 한 번 읽을 때 몇 번 샘플링해서 평균낼지.
 # - pop.Util 의 Cds 클래스는 기본값이 1024번인데, 이렇게 많이 샘플링
@@ -88,7 +98,27 @@ CDS_ADC_CHANNEL = 0
 #   줄여 "가볍게" 만드는 방식으로 반응 속도를 확보합니다.)
 # - 값이 작을수록(예: 8): 훨씬 빠르지만 값이 조금 더 흔들릴 수 있습니다.
 # - 값이 클수록(예: 1024): 더 안정적이지만 느려집니다.
-CDS_SAMPLE_COUNT = 32
+#
+# ※ 주의: 파이썬은 스레드가 여러 개 있어도 GIL(Global Interpreter
+#   Lock)이라는 규칙 때문에 한순간에는 딱 하나의 스레드만 실제로
+#   코드를 실행할 수 있습니다. 그래서 CDS 값을 읽는 배경 스레드가
+#   샘플을 너무 많이/너무 자주 읽으면, 그 계산을 하는 동안 방향키
+#   조종을 처리하는 스레드가 순서를 기다리게 되어 오히려 반응이
+#   느려질 수 있습니다. (진짜 별도의 물리적 MCU 칩이 있다면 이런
+#   경합이 없겠지만, 이 오토카의 CDS 센서는 젯슨 보드에 SPI로 직접
+#   연결되어 있어서 파이썬 스레드로 흉내낼 수밖에 없습니다.) 그래서
+#   기본값을 낮게(8) 잡았습니다.
+CDS_SAMPLE_COUNT = 8
+
+# CDS 센서를 전담으로 읽는 배경 스레드가 한 번 읽고 나서 얼마나
+# 쉬었다가 또 읽을지 (초 단위). 이 값은 CSV에 기록되는 주기
+# (SAMPLE_INTERVAL_SEC, 기본 0.1초)보다 더 빠르게 읽을 필요가 없어서
+# 똑같이 맞췄습니다 - 더 빠르게 읽어봐야 어차피 못 쓰이고 GIL 경합만
+# 늘어납니다.
+# - 값이 작을수록: CDS 값이 더 최신 상태로 자주 갱신되지만 CPU를 더 쓰고,
+#   조종 반응 속도에 영향을 줄 수 있습니다.
+# - 값이 클수록: CPU 사용/GIL 경합은 줄지만 값 갱신이 조금 늦어질 수 있음.
+CDS_READ_INTERVAL_SEC = 0.1
 
 # 카메라 프레임 크기 - 작을수록 처리 속도(FPS)가 빨라지고, 클수록
 # 화질은 좋아지지만 Visual Odometry 계산이 느려집니다.
@@ -173,17 +203,45 @@ HAS_CAM = False
 _camera = None
 
 
-def read_cds_value():
+def _read_cds_hardware():
     """
-    CDS(조도) 센서 값을 하나 읽어옵니다.
-    - 실제 센서가 있으면 진짜 밝기 값을 반환합니다. (값이 클수록 밝음)
+    CDS(조도) 센서 값을 실제로 하나 읽어옵니다. (시간이 조금 걸릴 수 있는
+    "느린" 부분 - 그래서 아래 _cds_reader_loop() 배경 스레드 안에서만
+    호출하고, 조종 명령을 처리하는 코드에서는 절대 직접 부르지 않습니다.)
+
+    ※ pop.Cds 클래스의 readAverage()는 전압값을 "럭스(lux, 밝기 단위)"로
+    억지로 환산해서 정수로 반올림해버리는 함수라서, 값이 몇 단계로만
+    뚝뚝 끊겨 나옵니다(예: 계속 1만 나오는 문제). 그래서 여기서는 그
+    대신 readVoltAverage()를 불러서, 실제로 센서가 측정한 "아날로그
+    전압값"(0.0V ~ 3.3V 사이의 연속된 소수 값)을 그대로 사용합니다.
+    - 실제 센서가 있으면 진짜 전압을 반환합니다. (밝을수록 전압이 변함 -
+      정확히 어느 방향으로 변하는지는 센서 회로 설계에 따라 다르므로,
+      대시보드에서 손으로 가려보며 값이 오르는지 내리는지 직접 확인하세요.)
     - 센서가 없는 시뮬레이션 모드에서는, 그래도 대시보드 테스트를 할 수
-      있도록 시간에 따라 부드럽게 오르내리는 가짜 값을 만들어 줍니다.
+      있도록 시간에 따라 부드럽게 오르내리는 가짜 전압값(0.0~3.3V)을
+      만들어 줍니다.
     """
     if HAS_CDS:
-        return cds_sensor.readAverage()
+        return round(cds_sensor.readVoltAverage(), 4)
     import math
-    return int(500 + 400 * math.sin(time.time() * 0.5))
+    return round(1.65 + 1.5 * math.sin(time.time() * 0.5), 4)
+
+
+# CDS 값을 "지금 막 읽은 최신 값"으로 캐시해두는 공용 변수.
+# _cds_reader_loop() 배경 스레드가 계속 새로 채워 넣고, read_cds_value()는
+# 이 값을 즉시 꺼내 쓰기만 해서 절대 오래 기다리지 않습니다.
+_cds_value_lock = threading.Lock()
+_latest_cds_value = 0
+
+
+def read_cds_value():
+    """
+    CDS 값이 필요할 때(조종/기록 코드에서) 부르는 함수. 실제 센서를
+    읽는 게 아니라, 배경 스레드가 미리 읽어서 캐시해둔 "가장 최근 값"을
+    그냥 꺼내오기만 하므로 거의 즉시(0에 가까운 시간) 끝납니다.
+    """
+    with _cds_value_lock:
+        return _latest_cds_value
 
 
 # ════════════════════════════════════════════════════════════
@@ -200,13 +258,7 @@ _state = {
 
 _last_ping = time.time()   # 워치독용 - 마지막으로 조종 신호를 받은 시각
 _odometry = TrackOdometry()          # 모터 기반 위치 추정
-_visual_odometry = VisualOdometry()  # 카메라 기반 위치 추정 (Visual Odometry)
-
-# 카메라가 방금 찍은 최신 프레임을 담아두는 공용 변수.
-# (카메라 스레드가 계속 새로 채워넣고, Visual Odometry 계산은 이 값을
-# 그때그때 꺼내 씁니다.)
-_frame_lock = threading.Lock()
-_latest_frame = None
+_visual_odometry = VisualOdometry()  # 카메라 기반 위치 추정 (Visual Odometry, 참고/보완용)
 
 # 주행 경로를 그리기 위해 화면에 보여줄 점들을 순서대로 저장하는 리스트
 # 각 원소: {"t": 경과초, "x": x좌표(m), "y": y좌표(m), "cds": 조도값}
@@ -230,7 +282,28 @@ _auto_thread = None
 
 def _apply_drive(direction, speed, steering):
     """
-    공용 상태값을 실제 오토카 명령으로 내려보내는 함수.
+    "이 방향/속력/조향으로 달리고 싶다"는 목표 상태를 저장만 하는 함수.
+
+    CDS 센서를 전용 스레드로 뺀 것과 똑같은 이유로, 실제 오토카에 CAN
+    통신 명령을 내려보내는 부분은 여기서 하지 않습니다. car.steering=...,
+    car.setSpeed(), car.forward() 같은 명령은 CAN 통신(전선으로 모터
+    제어 보드와 주고받는 통신)이라 몇 ms 정도 걸릴 수 있는데, 방향키를
+    누를 때마다 이 통신까지 같이 기다리면 그만큼 조종 반응이 느려집니다.
+    그래서 여기서는 목표값 저장만 아주 빠르게 끝내고, 실제 하드웨어
+    통신은 아래 _drive_writer_loop() 전용 스레드가 쉬지 않고 전담해서
+    처리합니다.
+    """
+    with _state_lock:
+        _state["direction"] = direction
+        _state["speed"] = speed
+        _state["steering"] = steering
+
+
+def _send_drive_to_hardware(direction, speed, steering):
+    """
+    실제로 오토카에 CAN 명령을 내려보내는 부분입니다. _drive_writer_loop()
+    전용 스레드 안에서만 호출됩니다 - 방향키 조종을 처리하는 /control
+    요청 코드는 이 함수를 직접 부르지 않고 절대 기다리지 않습니다.
 
     오토카의 "파워선"(모터/CAN 통신 보드에 전기를 공급하는 선)이 빠져
     있으면, car.steering / car.forward() 같은 명령이 응답을 못 받아서
@@ -239,11 +312,6 @@ def _apply_drive(direction, speed, steering):
     조용히 넘어가도록 만들었습니다. (모터는 당연히 안 움직이지만, 카메라
     기반 위치 추정이나 대시보드 화면 자체는 계속 정상 동작합니다.)
     """
-    with _state_lock:
-        _state["direction"] = direction
-        _state["speed"] = speed
-        _state["steering"] = steering
-
     if not car:
         return
 
@@ -259,20 +327,20 @@ def _apply_drive(direction, speed, steering):
             car.stop()
     except Exception as _e:
         # 파워선이 빠졌거나 CAN 통신이 응답하지 않는 상황 등.
-        # 여기서 예외를 처리하지 않으면 방향키를 누를 때마다 이 함수를
-        # 부르는 /control 요청 스레드가 통째로 멈추거나 죽어서, 대시보드
-        # 자체가 응답하지 않게 됩니다.
+        # 여기서 예외를 처리하지 않으면 이 배경 스레드가 통째로 멈춰서
+        # 그 뒤로 오토카에 아무 명령도 전달되지 않게 됩니다.
         print("[오토카] 명령 전달 실패 (파워선 확인 필요): %s" % _e)
 
 
 def _stop_drive():
+    """
+    즉시 정지가 필요할 때(워치독, 긴급정지, 운전/자동주행 정지) 씁니다.
+    목표 상태를 0으로 바꿔두는 것과 동시에, 전용 스레드의 다음 차례를
+    기다리지 않고 이 자리에서 바로 한 번 더 정지 명령을 직접 보내서
+    최대한 빨리 멈추도록 합니다.
+    """
     _apply_drive(0, 0, 0.0)
-
-
-def _get_latest_frame():
-    """카메라의 가장 최근 프레임을 복사해서 돌려줍니다. 카메라가 없으면 None."""
-    with _frame_lock:
-        return None if _latest_frame is None else _latest_frame.copy()
+    _send_drive_to_hardware(0, 0, 0.0)
 
 
 # ════════════════════════════════════════════════════════════
@@ -288,16 +356,62 @@ def _watchdog_loop():
 
 
 # ════════════════════════════════════════════════════════════
-# 3-1. 배경 스레드 1-B - 카메라 캡처 + Visual Odometry 갱신
-#    카메라가 있으면 계속 새 프레임을 받아와 _latest_frame 에 저장하고,
-#    그 프레임으로 VisualOdometry 위치도 함께 갱신합니다. 카메라가 없는
-#    (시뮬레이션) 환경이면 그냥 잠깐씩 쉬면서 아무 것도 하지 않습니다.
+# 3-0. 배경 스레드 0 - 주행 명령 전용 쓰기 스레드 ("작은 MCU"처럼 동작)
+#    CDS 센서 전용 스레드와 똑같은 구조입니다. 이 스레드 하나만 쉬지
+#    않고 "목표 상태(_state)"를 오토카 하드웨어(CAN 통신)에 실제로
+#    전달합니다. 방향키 조종을 처리하는 /control 요청은 목표 상태를
+#    저장만 하고 이 스레드를 절대 기다리지 않으므로, CAN 통신이 몇 ms
+#    걸리든 조종 반응 속도에는 영향을 주지 않습니다.
+# ════════════════════════════════════════════════════════════
+# 이 스레드가 목표 상태를 오토카에 다시 전달하는 주기(초). 방향키를
+# 계속 누르고 있으면 매번 같은 값을 다시 보내는 것뿐이라, 너무 빠르게
+# 반복할 필요는 없습니다.
+# - 값이 작을수록(예: 0.01): 목표가 바뀌었을 때 더 빨리 반영되지만
+#   CAN 통신 횟수가 늘어나 다른 스레드와의 GIL 경합이 늘어날 수 있음.
+# - 값이 클수록(예: 0.1): 통신 횟수는 줄지만 목표가 바뀐 뒤 실제
+#   반영까지 그만큼 시간이 더 걸림.
+DRIVE_WRITE_INTERVAL_SEC = 0.02  # 초당 최대 50번
+
+
+def _drive_writer_loop():
+    while True:
+        with _state_lock:
+            direction = _state["direction"]
+            speed = _state["speed"]
+            steering = _state["steering"]
+        _send_drive_to_hardware(direction, speed, steering)
+        time.sleep(DRIVE_WRITE_INTERVAL_SEC)
+
+
+# ════════════════════════════════════════════════════════════
+# 3-1. 배경 스레드 1-B - CDS 센서 전용 읽기 스레드 ("작은 MCU"처럼 동작)
+#    이 스레드 하나만 쉬지 않고 CDS 센서를 읽고 _latest_cds_value에
+#    저장합니다. 조종 명령을 처리하는 코드는 이 스레드를 전혀 기다리지
+#    않고 캐시된 값만 즉시 읽어가므로, 센서를 읽는 데 걸리는 시간이
+#    조종 반응 속도에 영향을 주지 않습니다.
+# ════════════════════════════════════════════════════════════
+def _cds_reader_loop():
+    global _latest_cds_value
+    while True:
+        value = _read_cds_hardware()
+        with _cds_value_lock:
+            _latest_cds_value = value
+        time.sleep(CDS_READ_INTERVAL_SEC)
+
+
+# ════════════════════════════════════════════════════════════
+# 3-2. 배경 스레드 1-C - 카메라 캡처 + Visual Odometry 갱신
+#    카메라가 있으면 계속 새 프레임을 받아와 VisualOdometry 위치를
+#    갱신합니다. 카메라가 없는(시뮬레이션) 환경이면 그냥 잠깐씩
+#    쉬면서 아무 것도 하지 않습니다. (라인트레이싱 등 다른 용도로는
+#    쓰지 않고, 오직 위치 추정 보완용으로만 사용합니다.)
 # ════════════════════════════════════════════════════════════
 def _open_camera():
     """
     실제로 카메라를 여는 부분. 이 함수는 웹 서버가 이미 켜진 뒤에,
     별도 스레드 안에서만 호출됩니다 - 그래서 카메라가 열리는 데
-    오래 걸리거나 실패해도 웹 대시보드 접속 자체에는 영향이 없습니다.
+    오래 걸리거나 실패해도(예: 오토카 파워선이 빠져 카메라가 없는
+    상태) 웹 대시보드 접속 자체에는 영향이 없습니다.
 
     1순위: pop.Util.gstrmer() 로 만든 GStreamer 파이프라인 (오토카 전용 카메라)
     2순위: 그냥 일반 USB 웹캠(cv2.VideoCapture(0))
@@ -305,32 +419,46 @@ def _open_camera():
     """
     global HAS_CAM, _camera
 
+    # isOpened()만 확인하면 "파이프라인 객체는 만들어졌지만 실제로는
+    # 사진을 한 장도 못 찍는" 상태(예: 물리적으로 카메라가 없는 경우)를
+    # "성공"으로 잘못 판단할 수 있습니다. (실제로 오토카에서 "No cameras
+    # available"이라는 오류가 났는데도 "연결 성공"이라고 나온 사례가
+    # 있었습니다.) 그래서 실제로 사진을 한 장 읽어보고, 진짜로 읽히는지
+    # 확인한 뒤에만 "성공"으로 판단하도록 만들었습니다.
+    def _try_read_one_frame(cap, tries=5, wait_sec=0.3):
+        for _ in range(tries):
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                return True
+            time.sleep(wait_sec)
+        return False
+
     try:
         from pop.Util import gstrmer
         _cam_pipeline = gstrmer(width=CAMERA_WIDTH, height=CAMERA_HEIGHT, fps=CAMERA_FPS, flip=0)
         _camera = cv2.VideoCapture(_cam_pipeline, cv2.CAP_GSTREAMER)
-        if not _camera.isOpened():
-            raise RuntimeError("GStreamer 카메라 파이프라인을 열지 못했습니다.")
-        HAS_CAM = True
-        print("[카메라] 연결 성공 (GStreamer)")
-        return
-    except Exception as _e:
+        if _camera.isOpened() and _try_read_one_frame(_camera):
+            HAS_CAM = True
+            print("[카메라] 연결 성공 (GStreamer)")
+            return
+        _camera.release()
+        raise RuntimeError("GStreamer 카메라에서 실제 프레임을 받지 못했습니다.")
+    except Exception:
         pass
 
     try:
         _camera = cv2.VideoCapture(0)
-        if _camera.isOpened():
+        if _camera.isOpened() and _try_read_one_frame(_camera):
             HAS_CAM = True
             print("[카메라] 연결 성공 (기본 웹캠)")
         else:
+            _camera.release()
             print("[카메라] 시뮬레이션 모드로 동작합니다 (카메라를 찾지 못함)")
     except Exception as _e2:
         print("[카메라] 시뮬레이션 모드로 동작합니다 (연결 실패: %s)" % _e2)
 
 
 def _camera_loop():
-    global _latest_frame
-
     _open_camera()  # 웹 서버가 이미 실행 중인 상태에서 카메라를 엽니다.
 
     while True:
@@ -342,9 +470,6 @@ def _camera_loop():
         if not ok or frame is None:
             time.sleep(0.05)
             continue
-
-        with _frame_lock:
-            _latest_frame = frame
 
         _visual_odometry.update(frame)
 
@@ -426,10 +551,10 @@ CSV_HEADER = [
     "elapsed_sec",      # 레코딩을 시작한 뒤로부터 흐른 시간(초)
     "x_m", "y_m",        # 모터+조향각 기반(오도메트리) 위치 (미터)
     "heading_deg",       # 오도메트리로 추정한 진행 방향 (도)
-    "vo_x_m", "vo_y_m",  # 카메라 기반(Visual Odometry) 위치 (미터)
+    "vo_x_m", "vo_y_m",  # 카메라 기반(Visual Odometry) 위치 (미터, 참고용)
     "speed",             # 그 순간의 부호 있는 속력 (-99~99)
     "steering",          # 그 순간의 조향 값 (-1~1)
-    "cds_value",         # CDS 조도 센서 값
+    "cds_value",         # CDS 조도 센서의 아날로그 전압값 (단위: V, 0.0~3.3)
 ]
 
 
@@ -595,9 +720,9 @@ _HTML = """<!DOCTYPE html>
     <h2>&#128506; 주행 경로 (위치별 CDS 값)</h2>
     <canvas id="pathCanvas" width="600" height="420"></canvas>
     <div class="stat"><span>현재 위치 (모터 기반)</span><b id="posInfo">x=0.00m, y=0.00m</b></div>
-    <div class="stat"><span>현재 위치 (카메라 기반, VO)</span><b id="voInfo">x=0.00m, y=0.00m</b></div>
-    <div class="stat"><span>현재 CDS 값</span><b id="cdsInfo">-</b></div>
-    <h2 style="margin-top:4px;">CDS 값 변화 그래프</h2>
+    <div class="stat"><span>현재 위치 (카메라 기반, 참고용)</span><b id="voInfo">x=0.00m, y=0.00m</b></div>
+    <div class="stat"><span>현재 CDS 전압값 (V)</span><b id="cdsInfo">-</b></div>
+    <h2 style="margin-top:4px;">CDS 전압값 변화 그래프 (0~3.3V)</h2>
     <canvas id="cdsCanvas" width="600" height="140"></canvas>
   </div>
 
@@ -746,13 +871,20 @@ document.getElementById('kbSpeed').addEventListener('input', function() {
 // 운전 시작 / 정지 (= 조종 활성화 + CSV 수집 시작/종료)
 //   - 수동(키보드)과 자동 주행은 동시에 켤 수 없습니다.
 //     한쪽을 시작하면 다른 쪽은 자동으로 꺼서 서로 충돌하지 않게 합니다.
+//   - 중요: 모드를 서로 전환할 때는 "/stop"(오토카만 잠깐 멈춤)을 쓰고
+//     "/drive/stop", "/auto/stop"(오토카를 멈추면서 CSV 파일도 닫음)은
+//     쓰지 않습니다. 예전에는 모드를 바꿀 때마다 CSV 파일이 끊기고
+//     새로 생겨서, "운전 시작~운전 정지" 한 번 사이에 파일이 여러 개로
+//     쪼개지는 문제가 있었습니다. 이제는 실제로 "운전 정지"/"자동 주행
+//     정지" 버튼을 눌렀을 때만 파일이 닫히고, 중간에 모드를 바꿔도
+//     하나의 파일에 계속 이어서 저장됩니다.
 // ══════════════════════════════════════════════════════
 function toggleDrive() {
   driveActive = !driveActive;
   const btn = document.getElementById('driveBtn');
   const status = document.getElementById('driveStatus');
   if (driveActive) {
-    if (autoOn) { autoOn = false; api('/auto/stop'); resetAutoButton(); }
+    if (autoOn) { autoOn = false; api('/stop'); resetAutoButton(); }
     api('/drive/start').then(d => {
       document.getElementById('fileInfo').textContent = d ? d.filename : '-';
     });
@@ -797,7 +929,7 @@ function toggleAuto() {
   autoOn = !autoOn;
   const btn = document.getElementById('autoBtn');
   if (autoOn) {
-    if (driveActive) { driveActive = false; api('/drive/stop'); toggleDriveButtonReset(); }
+    if (driveActive) { driveActive = false; api('/stop'); toggleDriveButtonReset(); }
     const speed = parseInt(document.getElementById('autoSpeed').value);
     const steer = parseInt(document.getElementById('autoSteer').value) / 100;
     api('/auto/start', {speed: speed, steering: steer}).then(d => {
@@ -830,15 +962,27 @@ const cdsCanvas = document.getElementById('cdsCanvas');
 const cctx = cdsCanvas.getContext('2d');
 const CW = cdsCanvas.width, CH = cdsCanvas.height;
 
+// CDS 값은 이제 럭스(lux)가 아니라 센서가 실제로 측정한 아날로그
+// 전압값(0.0V ~ 3.3V)입니다. 그래서 색/그래프 눈금도 0~3.3 범위에
+// 맞춰뒀습니다.
+const CDS_MAX_VOLT = 3.3;
+
 function cdsToColor(v) {
-  // CDS 값(밝을수록 큼)을 파랑(어두움) ~ 노랑(밝음) 색으로 표현
-  const t = Math.max(0, Math.min(1, v / 1000));
+  // CDS 전압값(0~3.3V)을 파랑(낮음) ~ 노랑(높음) 색으로 표현
+  const t = Math.max(0, Math.min(1, v / CDS_MAX_VOLT));
   const r = Math.round(40 + t * 215);
   const g = Math.round(60 + t * 195);
   const b = Math.round(200 - t * 160);
   return 'rgb(' + r + ',' + g + ',' + b + ')';
 }
 
+// 오토카의 "현재 위치"를 화면 정중앙에 고정시키는 방식입니다.
+//   - 예전 방식: 시작 지점(0,0)을 화면 중앙에 고정 → 오토카가 멀리
+//     가면 화면 밖으로 나가버림.
+//   - 지금 방식: 매번 "가장 최근 위치(마지막 점)"를 화면 중앙에 두고,
+//     지나온 점들은 그 최근 위치를 기준으로 상대 좌표를 계산해서
+//     그립니다. 그래서 오토카는 항상 정중앙에 있고, 지나온 경로가
+//     오토카 뒤쪽으로 흘러가는 것처럼 보입니다.
 function drawPath(trail) {
   pctx.clearRect(0, 0, PW, PH);
   const cx = PW/2, cy = PH/2;
@@ -846,19 +990,32 @@ function drawPath(trail) {
   pctx.strokeStyle = 'rgba(88,166,255,0.08)'; pctx.lineWidth = 1;
   pctx.beginPath(); pctx.moveTo(cx, 0); pctx.lineTo(cx, PH); pctx.moveTo(0, cy); pctx.lineTo(PW, cy); pctx.stroke();
 
+  if (trail.length === 0) {
+    document.getElementById('ptCount').textContent = 0;
+    return;
+  }
+
+  // 기준점 = 가장 최근(현재) 위치. 모든 점을 이 기준점으로부터 얼마나
+  // 떨어져 있는지로 다시 계산해서, 현재 위치가 항상 (cx, cy)에 오게 함.
+  const origin = trail[trail.length - 1];
+
   for (const p of trail) {
-    const px = cx + p.x * METERS_TO_PIXELS;
-    const py = cy - p.y * METERS_TO_PIXELS;
+    const px = cx + (p.x - origin.x) * METERS_TO_PIXELS;
+    const py = cy - (p.y - origin.y) * METERS_TO_PIXELS;
     pctx.beginPath(); pctx.arc(px, py, 3, 0, Math.PI*2);
     pctx.fillStyle = cdsToColor(p.cds);
     pctx.fill();
   }
-  if (trail.length > 0) {
-    const last = trail[trail.length - 1];
-    document.getElementById('posInfo').textContent =
-      'x=' + last.x.toFixed(2) + 'm, y=' + last.y.toFixed(2) + 'm';
-    document.getElementById('cdsInfo').textContent = last.cds;
-  }
+
+  // 현재 위치(항상 화면 정중앙)를 오토카 아이콘처럼 눈에 띄게 표시
+  pctx.beginPath(); pctx.arc(cx, cy, 7, 0, Math.PI*2);
+  pctx.fillStyle = '#ffffff';
+  pctx.fill();
+  pctx.strokeStyle = '#58a6ff'; pctx.lineWidth = 2; pctx.stroke();
+
+  document.getElementById('posInfo').textContent =
+    'x=' + origin.x.toFixed(2) + 'm, y=' + origin.y.toFixed(2) + 'm';
+  document.getElementById('cdsInfo').textContent = origin.cds.toFixed(3) + 'V';
   document.getElementById('ptCount').textContent = trail.length;
 }
 
@@ -866,11 +1023,10 @@ function drawCdsChart(trail) {
   cctx.clearRect(0, 0, CW, CH);
   if (trail.length < 2) return;
   const recent = trail.slice(-200); // 최근 200개 점만 표시 (너무 빽빽해지지 않도록)
-  const maxV = 1000;
   cctx.strokeStyle = '#58a6ff'; cctx.lineWidth = 2; cctx.beginPath();
   recent.forEach((p, i) => {
     const px = (i / (recent.length - 1)) * CW;
-    const py = CH - (Math.min(p.cds, maxV) / maxV) * CH;
+    const py = CH - (Math.min(p.cds, CDS_MAX_VOLT) / CDS_MAX_VOLT) * CH;
     if (i === 0) cctx.moveTo(px, py); else cctx.lineTo(px, py);
   });
   cctx.stroke();
@@ -1021,12 +1177,14 @@ def track_route():
 if __name__ == '__main__':
     print("=" * 55)
     print("  오토카 운동장 트랙 대시보드 시작")
-    print("  AutoCar HW : " + ("연결됨" if HAS_CAR else "시뮬레이션"))
-    print("  CDS 센서   : " + ("연결됨" if HAS_CDS else "시뮬레이션"))
+    print("  AutoCar HW : " + ("연결됨" if HAS_CAR else "시뮬레이션") + " (전용 스레드에서 조종 명령 전달 중)")
+    print("  CDS 센서   : " + ("연결됨" if HAS_CDS else "시뮬레이션") + " (전용 스레드에서 읽는 중)")
     print("  카메라     : 백그라운드에서 여는 중... (대시보드의 CAM 배지에서 확인)")
     print("=" * 55)
 
     threading.Thread(target=_watchdog_loop, daemon=True).start()
+    threading.Thread(target=_drive_writer_loop, daemon=True).start()
+    threading.Thread(target=_cds_reader_loop, daemon=True).start()
     threading.Thread(target=_sampling_loop, daemon=True).start()
     # 카메라는 열리는 데 시간이 걸릴 수 있어서 별도 스레드에서 엽니다.
     # 이 스레드가 아직 카메라를 여는 중이어도 아래 app.run()은 곧바로

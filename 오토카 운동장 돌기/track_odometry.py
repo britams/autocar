@@ -77,6 +77,24 @@ class TrackOdometry:
     # 실제로 도는 방향과 반대로 나온다면 이 값을 -1 로 바꿔보세요.
     STEER_SIGN = 1
 
+    # ── 회전량 보정 계수 (실측 기반) ──
+    # WHEELBASE_M, MAX_STEER_ANGLE_DEG는 줄자로 재지 않은 "대략적인
+    # 추정값"이라서, 실제로 계산되는 회전량이 실제 오토카보다 더
+    # 크거나 작게 나올 수 있습니다.
+    #
+    # 실제 테스트에서 "오토카는 90도 돌았는데 웹뷰 지도에는 360도
+    # 돈 것으로 나타남" → 계산값이 실제보다 360 ÷ 90 = 4배 크게
+    # 나온 것이므로, 아래 값을 4로 두어 회전 속도를 1/4로 줄입니다.
+    #
+    # 다시 테스트했는데 또 어긋난다면:
+    #   TURN_CORRECTION_FACTOR = (웹뷰에 나온 회전각) / (실제로 돈 회전각)
+    #   예) 실제 90도 돌았는데 웹뷰에서 180도로 나오면 180/90=2 이므로
+    #       이 값에 2를 곱해서 넣어주면 됩니다.
+    #   반대로 웹뷰가 실제보다 "덜" 돈 것으로 나온다면 이 값을 그
+    #       비율만큼 줄이면 됩니다 (예: 실제 90도인데 웹뷰가 45도면
+    #       45/90=0.5이므로 이 값에 0.5를 곱함).
+    TURN_CORRECTION_FACTOR = 4.0
+
     def __init__(self):
         self.x = 0.0            # 현재 x 좌표 (미터)
         self.y = 0.0            # 현재 y 좌표 (미터)
@@ -121,8 +139,13 @@ class TrackOdometry:
         #    - 방향(heading)이 바뀌는 빠르기 = (속도 / 축간거리) * tan(조향각)
         #      => 조향각이 클수록, 속도가 빠를수록, 축간거리가 짧을수록
         #         더 빨리(급하게) 방향이 바뀝니다.
+        #    - 마지막에 TURN_CORRECTION_FACTOR로 나눠서, 실제 테스트로
+        #      확인한 오차만큼 보정합니다.
         if abs(steer_rad) > 1e-6:
-            angular_velocity = (velocity_mps / self.WHEELBASE_M) * math.tan(steer_rad)
+            angular_velocity = (
+                (velocity_mps / self.WHEELBASE_M) * math.tan(steer_rad)
+                / self.TURN_CORRECTION_FACTOR
+            )
         else:
             angular_velocity = 0.0  # 조향각이 0이면 직진이므로 회전 없음
 
