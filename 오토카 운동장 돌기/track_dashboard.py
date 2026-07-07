@@ -5,22 +5,31 @@ track_dashboard.py
 [7/3 과제] 오토카 운동장 트랙 돌기 - 센서 수집 + 웹 대시보드
 
 ■ 이 프로그램이 하는 일
-  1) 오토카를 조종합니다. (컴퓨터 키보드 방향키 조종 / 자동주행 버튼)
-  2) "운전 시작" 버튼을 누르면 조종이 활성화되면서 동시에 CDS(조도) 센서
-     값 + 위치(오도메트리) 데이터 수집이 시작됩니다.
-  3) "운전 정지" 버튼을 누르면 오토카가 멈추고, 수집도 즉시 종료되면서
+  1) 오토카를 조종합니다. 조종 방법은 2가지입니다.
+       (가) 컴퓨터 키보드 방향키로 직접 조종 (수동)
+       (나) 일정한 속력+조향으로 원을 그리며 도는 간단한 자동주행
+  2) "운전 시작"(수동) 또는 "자동 주행 시작"(자동) 버튼을 누르면
+     조종이 시작되면서 동시에 CDS(조도) 센서 값 + 위치 데이터 수집이
+     시작됩니다. 위치는 두 가지 방법으로 동시에 추정합니다.
+       - 모터 속도 + 조향각 기반 위치 추정 (track_odometry.py)
+       - 카메라 영상 기반 위치 추정, Visual Odometry (track_vision.py)
+  3) "정지" 버튼을 누르면 오토카가 멈추고, 수집도 즉시 종료되면서
      CSV 파일이 "csv 파일 모음" 폴더에 바로 저장됩니다.
   4) 웹 브라우저(대시보드)에서 실시간으로 주행 경로와 센서 값 그래프를
      보면서 확인할 수 있습니다.
 
 ■ 조작 방법
-  - 브라우저 화면에서 "운전 시작"을 누른 뒤, 키보드의 방향키를 누릅니다.
+  - 수동 조종: "운전 시작"을 누른 뒤 키보드 방향키를 누릅니다.
       ↑ : 전진        ↓ : 후진
       ← : 왼쪽으로 조향   → : 오른쪽으로 조향
-  - 방향키에서 손을 떼면 그 즉시 오토카가 멈춥니다. (계속 누르고 있어야
+    방향키에서 손을 떼면 그 즉시 오토카가 멈춥니다. (계속 누르고 있어야
     움직입니다 - 오래 눌러도 안전하도록 워치독이 같이 동작합니다.)
-  - "운전 정지"를 누르면 오토카가 멈추고 그 순간까지 모은 데이터가
-    CSV 파일로 저장됩니다.
+  - 자동 주행: "자동 주행" 카드에서 "자동 주행 시작"을 누르면 사람이
+    조종하지 않아도 오토카가 정해진 속력+조향으로 스스로 움직입니다.
+  - 수동/자동은 동시에 켤 수 없습니다. 한쪽을 시작하면 다른 쪽은 자동으로
+    꺼집니다 (서로 조종 명령이 충돌하지 않도록).
+  - "정지"를 누르면 오토카가 멈추고 그 순간까지 모은 데이터가 CSV
+    파일로 저장됩니다.
 
 ■ 실행 방법 (오토카 터미널 = soda@192.168.0.57 에서 실행)
     1) 이 폴더를 오토카로 옮깁니다. (WSL 터미널에서 실행)
@@ -35,7 +44,8 @@ track_dashboard.py
 
 ■ 파일 구성
     track_dashboard.py  : 이 파일. Flask 웹 서버 + 대시보드 화면.
-    track_odometry.py   : 위치(오도메트리) 계산 전용 모듈.
+    track_odometry.py   : 모터 기반 위치(오도메트리) 계산 전용 모듈.
+    track_vision.py      : 카메라 기반 위치 추정(Visual Odometry) 전용 모듈.
     csv 파일 모음/         : 수집한 CSV 파일이 자동으로 저장되는 폴더.
 ──────────────────────────────────────────────────────────────
 """
@@ -46,6 +56,8 @@ import csv
 import time
 import threading
 
+import cv2
+
 # pop 모듈 경로 추가 (오토카 홈 디렉터리인 /home/soda 를 파이썬 경로에 넣어줌)
 sys.path.insert(0, os.path.expanduser('~'))
 sys.path.insert(0, os.getcwd())
@@ -53,6 +65,7 @@ sys.path.insert(0, os.getcwd())
 from flask import Flask, jsonify, request
 
 from track_odometry import TrackOdometry
+from track_vision import VisualOdometry
 
 # ════════════════════════════════════════════════════════════
 # 0. 조정 가능한 숫자값 모음 (여기 값들을 바꾸면 동작이 어떻게 바뀌는지 설명)
@@ -65,6 +78,23 @@ from track_odometry import TrackOdometry
 #   나오면 이 번호를 0~7 사이에서 바꿔가며 실제로 빛을 손으로 가려보고
 #   값이 바뀌는 채널을 찾아주세요.
 CDS_ADC_CHANNEL = 0
+
+# CDS 센서 값을 한 번 읽을 때 몇 번 샘플링해서 평균낼지.
+# - pop.Util 의 Cds 클래스는 기본값이 1024번인데, 이렇게 많이 샘플링
+#   하면 값은 더 안정적이지만 한 번 읽는 데 걸리는 시간이 길어지고,
+#   그동안 파이썬이 다른 작업(방향키 조종 명령 처리 등)을 잠깐 못 하게
+#   되어 조종 반응이 느려질 수 있습니다. (마이크로컨트롤러처럼 센서만
+#   전담으로 읽는 별도 하드웨어가 없어서, 소프트웨어에서 샘플 수를
+#   줄여 "가볍게" 만드는 방식으로 반응 속도를 확보합니다.)
+# - 값이 작을수록(예: 8): 훨씬 빠르지만 값이 조금 더 흔들릴 수 있습니다.
+# - 값이 클수록(예: 1024): 더 안정적이지만 느려집니다.
+CDS_SAMPLE_COUNT = 32
+
+# 카메라 프레임 크기 - 작을수록 처리 속도(FPS)가 빨라지고, 클수록
+# 화질은 좋아지지만 Visual Odometry 계산이 느려집니다.
+CAMERA_WIDTH = 320
+CAMERA_HEIGHT = 240
+CAMERA_FPS = 20
 
 # 센서/위치를 얼마나 자주 측정할지 (초 단위)
 # - 값이 작을수록(예: 0.05초): 더 촘촘하게 기록되어 그래프가 부드럽지만
@@ -121,16 +151,26 @@ except Exception as _e:
 HAS_CDS = False
 cds_sensor = None
 try:
-    from pop.Util import Cds
+    from pop import Cds  # Cds 클래스는 pop.Util이 아니라 pop 최상위에 있음
     cds_sensor = Cds(channel=CDS_ADC_CHANNEL)
+    cds_sensor.setSample(CDS_SAMPLE_COUNT)  # 반응 속도를 위해 샘플 수를 가볍게 줄임
     HAS_CDS = True
-    print("[CDS 센서] 연결 성공 (채널 %d)" % CDS_ADC_CHANNEL)
+    print("[CDS 센서] 연결 성공 (채널 %d, 샘플 %d개)" % (CDS_ADC_CHANNEL, CDS_SAMPLE_COUNT))
 except Exception as _e:
     print("[CDS 센서] 시뮬레이션 모드로 동작합니다 (센서 연결 실패: %s)" % _e)
 finally:
     for _attr in ('np', 'torchvision'):
         if hasattr(_builtins, _attr):
             delattr(_builtins, _attr)
+
+# 카메라는 아직 열지 않습니다! GStreamer 카메라는 열리는 데 시간이 걸리거나
+# 드물게 멈춰버릴 수 있는데, 만약 프로그램이 시작되는 이 시점에 바로
+# 열려고 하면 카메라가 느릴 때 웹 서버(app.run())가 시작되는 지점까지
+# 코드가 도달하지 못해서 브라우저 접속 자체가 안 되는 문제가 생깁니다.
+# 그래서 실제 카메라 열기는 아래 _camera_loop() 배경 스레드 안에서,
+# "웹 서버가 이미 켜진 뒤에" 한 번만 시도하도록 미뤄뒀습니다.
+HAS_CAM = False
+_camera = None
 
 
 def read_cds_value():
@@ -159,7 +199,14 @@ _state = {
 }
 
 _last_ping = time.time()   # 워치독용 - 마지막으로 조종 신호를 받은 시각
-_odometry = TrackOdometry()
+_odometry = TrackOdometry()          # 모터 기반 위치 추정
+_visual_odometry = VisualOdometry()  # 카메라 기반 위치 추정 (Visual Odometry)
+
+# 카메라가 방금 찍은 최신 프레임을 담아두는 공용 변수.
+# (카메라 스레드가 계속 새로 채워넣고, Visual Odometry 계산은 이 값을
+# 그때그때 꺼내 씁니다.)
+_frame_lock = threading.Lock()
+_latest_frame = None
 
 # 주행 경로를 그리기 위해 화면에 보여줄 점들을 순서대로 저장하는 리스트
 # 각 원소: {"t": 경과초, "x": x좌표(m), "y": y좌표(m), "cds": 조도값}
@@ -182,7 +229,16 @@ _auto_thread = None
 
 
 def _apply_drive(direction, speed, steering):
-    """공용 상태값을 실제 오토카 명령으로 내려보내는 함수."""
+    """
+    공용 상태값을 실제 오토카 명령으로 내려보내는 함수.
+
+    오토카의 "파워선"(모터/CAN 통신 보드에 전기를 공급하는 선)이 빠져
+    있으면, car.steering / car.forward() 같은 명령이 응답을 못 받아서
+    에러를 내거나 멈춰버릴 수 있습니다. 여기서 try/except로 감싸서,
+    그런 경우에도 프로그램 전체가 죽지 않고 "이번 명령은 실패했다"고만
+    조용히 넘어가도록 만들었습니다. (모터는 당연히 안 움직이지만, 카메라
+    기반 위치 추정이나 대시보드 화면 자체는 계속 정상 동작합니다.)
+    """
     with _state_lock:
         _state["direction"] = direction
         _state["speed"] = speed
@@ -191,19 +247,32 @@ def _apply_drive(direction, speed, steering):
     if not car:
         return
 
-    car.steering = steering
-    if direction > 0:
-        car.setSpeed(speed)
-        car.forward()
-    elif direction < 0:
-        car.setSpeed(speed)
-        car.backward()
-    else:
-        car.stop()
+    try:
+        car.steering = steering
+        if direction > 0:
+            car.setSpeed(speed)
+            car.forward()
+        elif direction < 0:
+            car.setSpeed(speed)
+            car.backward()
+        else:
+            car.stop()
+    except Exception as _e:
+        # 파워선이 빠졌거나 CAN 통신이 응답하지 않는 상황 등.
+        # 여기서 예외를 처리하지 않으면 방향키를 누를 때마다 이 함수를
+        # 부르는 /control 요청 스레드가 통째로 멈추거나 죽어서, 대시보드
+        # 자체가 응답하지 않게 됩니다.
+        print("[오토카] 명령 전달 실패 (파워선 확인 필요): %s" % _e)
 
 
 def _stop_drive():
     _apply_drive(0, 0, 0.0)
+
+
+def _get_latest_frame():
+    """카메라의 가장 최근 프레임을 복사해서 돌려줍니다. 카메라가 없으면 None."""
+    with _frame_lock:
+        return None if _latest_frame is None else _latest_frame.copy()
 
 
 # ════════════════════════════════════════════════════════════
@@ -216,6 +285,68 @@ def _watchdog_loop():
         time.sleep(0.05)
         if car and (time.time() - _last_ping > WATCHDOG_TIMEOUT_SEC):
             _stop_drive()
+
+
+# ════════════════════════════════════════════════════════════
+# 3-1. 배경 스레드 1-B - 카메라 캡처 + Visual Odometry 갱신
+#    카메라가 있으면 계속 새 프레임을 받아와 _latest_frame 에 저장하고,
+#    그 프레임으로 VisualOdometry 위치도 함께 갱신합니다. 카메라가 없는
+#    (시뮬레이션) 환경이면 그냥 잠깐씩 쉬면서 아무 것도 하지 않습니다.
+# ════════════════════════════════════════════════════════════
+def _open_camera():
+    """
+    실제로 카메라를 여는 부분. 이 함수는 웹 서버가 이미 켜진 뒤에,
+    별도 스레드 안에서만 호출됩니다 - 그래서 카메라가 열리는 데
+    오래 걸리거나 실패해도 웹 대시보드 접속 자체에는 영향이 없습니다.
+
+    1순위: pop.Util.gstrmer() 로 만든 GStreamer 파이프라인 (오토카 전용 카메라)
+    2순위: 그냥 일반 USB 웹캠(cv2.VideoCapture(0))
+    둘 다 실패하면 카메라 없이 시뮬레이션 모드로 동작합니다.
+    """
+    global HAS_CAM, _camera
+
+    try:
+        from pop.Util import gstrmer
+        _cam_pipeline = gstrmer(width=CAMERA_WIDTH, height=CAMERA_HEIGHT, fps=CAMERA_FPS, flip=0)
+        _camera = cv2.VideoCapture(_cam_pipeline, cv2.CAP_GSTREAMER)
+        if not _camera.isOpened():
+            raise RuntimeError("GStreamer 카메라 파이프라인을 열지 못했습니다.")
+        HAS_CAM = True
+        print("[카메라] 연결 성공 (GStreamer)")
+        return
+    except Exception as _e:
+        pass
+
+    try:
+        _camera = cv2.VideoCapture(0)
+        if _camera.isOpened():
+            HAS_CAM = True
+            print("[카메라] 연결 성공 (기본 웹캠)")
+        else:
+            print("[카메라] 시뮬레이션 모드로 동작합니다 (카메라를 찾지 못함)")
+    except Exception as _e2:
+        print("[카메라] 시뮬레이션 모드로 동작합니다 (연결 실패: %s)" % _e2)
+
+
+def _camera_loop():
+    global _latest_frame
+
+    _open_camera()  # 웹 서버가 이미 실행 중인 상태에서 카메라를 엽니다.
+
+    while True:
+        if not HAS_CAM:
+            time.sleep(0.5)
+            continue
+
+        ok, frame = _camera.read()
+        if not ok or frame is None:
+            time.sleep(0.05)
+            continue
+
+        with _frame_lock:
+            _latest_frame = frame
+
+        _visual_odometry.update(frame)
 
 
 # ════════════════════════════════════════════════════════════
@@ -265,6 +396,7 @@ def _sampling_loop():
                     round(now, 3),
                     point["t"],
                     _odometry.x, _odometry.y, _odometry.heading_deg,
+                    _visual_odometry.x, _visual_odometry.y,
                     speed, steering, cds_value,
                 ])
                 _record_file.flush()  # 중간에 프로그램이 꺼져도 데이터가 남도록 즉시 저장
@@ -292,8 +424,9 @@ def _auto_drive_loop(speed, steering):
 CSV_HEADER = [
     "timestamp_unix",   # 실제 시각 (1970년부터 흐른 초)
     "elapsed_sec",      # 레코딩을 시작한 뒤로부터 흐른 시간(초)
-    "x_m", "y_m",        # 오도메트리로 추정한 위치 (미터)
+    "x_m", "y_m",        # 모터+조향각 기반(오도메트리) 위치 (미터)
     "heading_deg",       # 오도메트리로 추정한 진행 방향 (도)
+    "vo_x_m", "vo_y_m",  # 카메라 기반(Visual Odometry) 위치 (미터)
     "speed",             # 그 순간의 부호 있는 속력 (-99~99)
     "steering",          # 그 순간의 조향 값 (-1~1)
     "cds_value",         # CDS 조도 센서 값
@@ -330,6 +463,7 @@ def _start_recording():
     with _trail_lock:
         _trail.clear()
     _odometry.reset()
+    _visual_odometry.reset()
 
     return filename
 
@@ -422,6 +556,7 @@ _HTML = """<!DOCTYPE html>
   <h1>&#127939; 오토카 운동장 트랙 대시보드</h1>
   <span class="badge" id="hwBadge">HW: 확인중...</span>
   <span class="badge" id="cdsBadge">CDS: 확인중...</span>
+  <span class="badge" id="camBadge">CAM: 확인중...</span>
 </header>
 
 <div class="grid">
@@ -459,7 +594,8 @@ _HTML = """<!DOCTYPE html>
   <div class="card">
     <h2>&#128506; 주행 경로 (위치별 CDS 값)</h2>
     <canvas id="pathCanvas" width="600" height="420"></canvas>
-    <div class="stat"><span>현재 위치</span><b id="posInfo">x=0.00m, y=0.00m</b></div>
+    <div class="stat"><span>현재 위치 (모터 기반)</span><b id="posInfo">x=0.00m, y=0.00m</b></div>
+    <div class="stat"><span>현재 위치 (카메라 기반, VO)</span><b id="voInfo">x=0.00m, y=0.00m</b></div>
     <div class="stat"><span>현재 CDS 값</span><b id="cdsInfo">-</b></div>
     <h2 style="margin-top:4px;">CDS 값 변화 그래프</h2>
     <canvas id="cdsCanvas" width="600" height="140"></canvas>
@@ -499,6 +635,9 @@ fetch('/status').then(r => r.json()).then(d => {
   const cds = document.getElementById('cdsBadge');
   cds.textContent = 'CDS: ' + (d.has_cds ? '연결됨' : '시뮬레이션');
   cds.style.color = d.has_cds ? '#2ecc71' : '#e3b341';
+  const cam = document.getElementById('camBadge');
+  cam.textContent = 'CAM: ' + (d.has_cam ? '연결됨' : '시뮬레이션');
+  cam.style.color = d.has_cam ? '#2ecc71' : '#e3b341';
 }).catch(function(){});
 
 // ══════════════════════════════════════════════════════
@@ -605,12 +744,15 @@ document.getElementById('kbSpeed').addEventListener('input', function() {
 
 // ══════════════════════════════════════════════════════
 // 운전 시작 / 정지 (= 조종 활성화 + CSV 수집 시작/종료)
+//   - 수동(키보드)과 자동 주행은 동시에 켤 수 없습니다.
+//     한쪽을 시작하면 다른 쪽은 자동으로 꺼서 서로 충돌하지 않게 합니다.
 // ══════════════════════════════════════════════════════
 function toggleDrive() {
   driveActive = !driveActive;
   const btn = document.getElementById('driveBtn');
   const status = document.getElementById('driveStatus');
   if (driveActive) {
+    if (autoOn) { autoOn = false; api('/auto/stop'); resetAutoButton(); }
     api('/drive/start').then(d => {
       document.getElementById('fileInfo').textContent = d ? d.filename : '-';
     });
@@ -633,12 +775,12 @@ function emergencyStop() {
   const driveBtn = document.getElementById('driveBtn');
   driveBtn.textContent = '▶ 운전 시작';
   driveBtn.classList.remove('btn-red'); driveBtn.classList.add('btn-green');
-  document.getElementById('autoBtn').textContent = '자동 주행 시작';
+  resetAutoButton();
   document.getElementById('driveStatus').textContent = '긴급 정지됨';
   api('/stop');
 }
 
-// ── 자동 주행 (자동 주행도 시작/정지 시 CSV 수집이 같이 시작/종료됩니다) ──
+// ── 자동 주행 (시작/정지 시 CSV 수집이 같이 시작/종료됩니다) ──
 let autoOn = false;
 document.getElementById('autoSpeed').addEventListener('input', function() {
   document.getElementById('autoSpeedVal').textContent = this.value;
@@ -646,10 +788,16 @@ document.getElementById('autoSpeed').addEventListener('input', function() {
 document.getElementById('autoSteer').addEventListener('input', function() {
   document.getElementById('autoSteerVal').textContent = (this.value/100).toFixed(2);
 });
+
+function resetAutoButton() {
+  document.getElementById('autoBtn').textContent = '자동 주행 시작';
+}
+
 function toggleAuto() {
   autoOn = !autoOn;
   const btn = document.getElementById('autoBtn');
   if (autoOn) {
+    if (driveActive) { driveActive = false; api('/drive/stop'); toggleDriveButtonReset(); }
     const speed = parseInt(document.getElementById('autoSpeed').value);
     const steer = parseInt(document.getElementById('autoSteer').value) / 100;
     api('/auto/start', {speed: speed, steering: steer}).then(d => {
@@ -662,6 +810,12 @@ function toggleAuto() {
     btn.textContent = '자동 주행 시작';
     document.getElementById('driveStatus').textContent = '대기중 (저장 완료)';
   }
+}
+
+function toggleDriveButtonReset() {
+  const driveBtn = document.getElementById('driveBtn');
+  driveBtn.textContent = '▶ 운전 시작';
+  driveBtn.classList.remove('btn-red'); driveBtn.classList.add('btn-green');
 }
 
 // ── 경로 + CDS 그래프 그리기 ──
@@ -728,6 +882,10 @@ setInterval(function() {
   fetch('/track').then(r => r.json()).then(d => {
     drawPath(d.trail);
     drawCdsChart(d.trail);
+    if (d.vo) {
+      document.getElementById('voInfo').textContent =
+        'x=' + d.vo.x.toFixed(2) + 'm, y=' + d.vo.y.toFixed(2) + 'm';
+    }
   }).catch(function(){});
 }, 300);
 </script>
@@ -743,12 +901,20 @@ def index():
 
 @app.route('/status')
 def status():
-    return jsonify({"has_car": HAS_CAR, "has_cds": HAS_CDS})
+    return jsonify({"has_car": HAS_CAR, "has_cds": HAS_CDS, "has_cam": HAS_CAM})
 
 
 @app.route('/control', methods=['POST'])
 def control():
-    """키보드 방향키로 계산된 (x=조향, y=속력방향) 값을 받아 오토카에 적용."""
+    """키보드 방향키로 계산된 (x=조향, y=속력방향) 값을 받아 오토카에 적용.
+
+    자동 주행이 켜져있는 동안에는 무시합니다 - 그렇지 않으면
+    자동주행 스레드와 방향키 명령이 동시에 오토카에 명령을 내려서
+    서로 충돌(덜컹거림)할 수 있기 때문입니다.
+    """
+    if _auto_running:
+        return jsonify({"status": "ignored_auto_active"})
+
     data = request.get_json(silent=True) or {}
     x = float(data.get('x', 0))
     y = float(data.get('y', 0))
@@ -785,8 +951,10 @@ def drive_start():
     """
     "운전 시작" 버튼: 키보드 조종을 받을 준비 + CSV 수집을 동시에 시작합니다.
     (실제 조향/속력 명령은 /control 로 별도로 계속 전송됩니다.)
+    자동 주행이 켜져 있었다면 충돌하지 않도록 먼저 꺼줍니다.
     """
-    global _last_ping
+    global _last_ping, _auto_running
+    _auto_running = False
     _last_ping = time.time()
     filename = _start_recording()
     return jsonify({"status": "driving", "filename": filename})
@@ -802,7 +970,12 @@ def drive_stop():
 
 @app.route('/auto/start', methods=['POST'])
 def auto_start():
-    """간단한 자동 주행(이동 프로그램)을 시작하면서 CSV 수집도 같이 시작합니다."""
+    """
+    일정 속력+조향으로 원을 그리며 도는 단순 자동주행을 시작하면서
+    CSV 수집도 같이 시작합니다. 수동 조종(키보드)이 켜져 있었다면
+    충돌하지 않도록 프론트엔드에서 미리 꺼주지만, 혹시 몰라 여기서도
+    안전하게 오토카를 한 번 세웁니다.
+    """
     global _auto_running, _auto_thread
     data = request.get_json(silent=True) or {}
     speed = int(max(0, min(99, data.get('speed', 50))))
@@ -836,7 +1009,10 @@ def track_route():
     with _trail_lock:
         # 화면에는 최근 400개 점만 보내서 브라우저가 너무 무거워지지 않게 함
         trail_copy = list(_trail[-400:])
-    return jsonify({"trail": trail_copy})
+    return jsonify({
+        "trail": trail_copy,
+        "vo": {"x": round(_visual_odometry.x, 3), "y": round(_visual_odometry.y, 3)},
+    })
 
 
 # ════════════════════════════════════════════════════════════
@@ -847,10 +1023,16 @@ if __name__ == '__main__':
     print("  오토카 운동장 트랙 대시보드 시작")
     print("  AutoCar HW : " + ("연결됨" if HAS_CAR else "시뮬레이션"))
     print("  CDS 센서   : " + ("연결됨" if HAS_CDS else "시뮬레이션"))
+    print("  카메라     : 백그라운드에서 여는 중... (대시보드의 CAM 배지에서 확인)")
     print("=" * 55)
 
     threading.Thread(target=_watchdog_loop, daemon=True).start()
     threading.Thread(target=_sampling_loop, daemon=True).start()
+    # 카메라는 열리는 데 시간이 걸릴 수 있어서 별도 스레드에서 엽니다.
+    # 이 스레드가 아직 카메라를 여는 중이어도 아래 app.run()은 곧바로
+    # 실행되어 웹 서버가 먼저 뜨므로, 카메라 문제가 대시보드 접속 자체를
+    # 막지 않습니다.
+    threading.Thread(target=_camera_loop, daemon=True).start()
 
     print("브라우저에서 http://192.168.0.57:5000 으로 접속하세요!")
     print("종료하려면 Ctrl+C")
