@@ -151,6 +151,33 @@ WATCHDOG_TIMEOUT_SEC = 0.3
 #       "/home/eohyun_ee/autocar/오토카 운동장 돌기/"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "csv 파일 모음")
 
+# True로 두면, 이 프로그램을 새로 실행할 때마다(=보통 오토카를 껐다
+# 켜고 다시 실행할 때마다) DATA_DIR 안에 있던 CSV 파일을 전부 지우고
+# 깨끗한 상태로 시작합니다.
+#
+# ※ 주의: 젯슨 보드는 파이썬 코드 안에서 "방금 전원이 켜졌는지"를 직접
+#   알 방법이 없습니다. 그래서 "전원 켤 때"가 아니라 "이 스크립트가
+#   시작될 때"를 기준으로 삼았습니다. 실제로는 오토카를 껐다 켤 때마다
+#   이 스크립트도 다시 실행해야 하니 결과적으로 같은 효과를 내지만,
+#   전원을 끄지 않고 Ctrl+C로 껐다가 다시 실행해도 똑같이 지워진다는
+#   점을 꼭 기억하세요. 다시 실행하기 전에는 필요한 CSV를 미리
+#   노트북으로 옮겨두는 것이 안전합니다.
+CLEAR_CSV_ON_STARTUP = True
+
+
+def _reset_data_dir():
+    """DATA_DIR 안의 CSV 파일을 전부 지워서 매 실행마다 깨끗하게 시작합니다."""
+    if not CLEAR_CSV_ON_STARTUP:
+        return
+    if not os.path.isdir(DATA_DIR):
+        return
+    removed = 0
+    for name in os.listdir(DATA_DIR):
+        if name.endswith(".csv"):
+            os.remove(os.path.join(DATA_DIR, name))
+            removed += 1
+    print("[csv 파일 모음] 이전 CSV %d개를 정리하고 새로 시작합니다." % removed)
+
 
 # ════════════════════════════════════════════════════════════
 # 1. 오토카 하드웨어 초기화
@@ -1175,6 +1202,8 @@ def track_route():
 # 8. 메인 실행부
 # ════════════════════════════════════════════════════════════
 if __name__ == '__main__':
+    _reset_data_dir()
+
     print("=" * 55)
     print("  오토카 운동장 트랙 대시보드 시작")
     print("  AutoCar HW : " + ("연결됨" if HAS_CAR else "시뮬레이션") + " (전용 스레드에서 조종 명령 전달 중)")
