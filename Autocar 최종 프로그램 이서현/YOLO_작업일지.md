@@ -211,23 +211,18 @@ YOLOv3-tiny(다크넷 형식) → ONNX(중간 변환 파일) → TensorRT 엔진
 
 ## 4. 지금까지 만든 파일 목록
 
-### WSL (`Autocar 최종 프로그램/`)
+### WSL (`Autocar 최종 프로그램 이서현/`) — 2026-07-14 기준 현행 파일만 정리 (테스트 완료된 1회성 스크립트는 정리함, 4-1 참고)
 | 파일 | 설명 | 테스트 상태 |
 |---|---|---|
-| `test_yolo.py` | 정지 이미지 YOLO 테스트 | ✅ 완료 |
-| `webcam_yolo.py` | 웹캠 실시간 탐지 + TTS | ✅ 완료 |
+| `phone_remote_control.py` | **현재 메인 프로그램.** 폰 조종(MANUAL) + YOLO 사람 추적(AUTO) + 라이다 안전 회피(항상 최우선) + 사람 놓치면 카메라 탐색, 전부 통합 | ✅ 실행/응답 확인, 실기 조종 테스트 진행 중 |
+| `launcher.py` | 폰에서 시동/종료 버튼으로 `phone_remote_control.py`를 tmux로 켜고 끄는 상시 대기 서버 (포트 5001) | ✅ 실행 확인 |
+| `templates/remote.html` | 폰 조종 대시보드 화면 (팀 저장소 원본) | ✅ 정상 표시 |
+| `webcam_yolo.py` | WSL 웹캠 실시간 탐지 + TTS (연습용) | ✅ 완료 |
 | `tts_util.py` | 공용 음성 알림 모듈 | ✅ 완료 |
 | `cam_debug.py` | 카메라 포맷 디버깅용 | ✅ 완료 |
-| `sensor_fusion.py` | 카메라+라이다 방향/거리 계산 | ⏳ 설계만, Jetson 실기 테스트 필요 |
-| `obstacle_avoidance.py` | 장애물 회피 조향 로직 | ⏳ 설계만, Jetson 실기 테스트 필요 (현재 ultralytics 기반이라 Jetson용으로 재작성 필요) |
-| `jetson_yolo_test.py` | Jetson용 정지 이미지 테스트 (OpenCV DNN) | ✅ 완료 |
-| `jetson_yolo_camera.py` | Jetson용 실시간 카메라 탐지 (OpenCV DNN, CPU) | ✅ 완료, FPS 6.0 |
-| `jetson_obstacle_avoidance.py` | Jetson용 장애물 회피 (TensorRT, "정지 후 생각" 방식) | ✅ 실행됨, 물리적 반응속도는 하드웨어 담당 범위 |
-| `line_tracing.py` | 라인 트레이싱 (OpenCV 색상 검출) | ⏳ 색상값 미확정 (아래 2-11 참고) |
-| `line_calibration.py` | 라인 색상 보정용 (사진 찍어서 마스크 확인) | 🔄 현장 테스트 중, 계속 사용 예정 |
-| `color_sample.py` | 선/트랙 바닥의 정확한 HSV 값을 찍어서 비교하는 진단용 | ✅ 작성 완료 |
-| `line_tracing_with_avoidance.py` | 라인 트레이싱 + 장애물 회피 통합본 (목표 오프셋 방식) | ⏳ 실기 테스트 필요 |
-| `jetson_follow_person.py` | YOLO로 사람 인식해서 따라가는 기능 (TensorRT) | ⏳ 작성 완료, 실기 테스트 필요 |
+| `sensor_fusion.py` | 카메라+라이다 방향/거리 계산 설계 (참고용, 실제 통합은 `phone_remote_control.py`에 반영됨) | 🗄️ 참고용 보관 |
+| `jetson_obstacle_avoidance.py` | Jetson용 장애물 회피 (TensorRT, "정지 후 생각" 방식, 초기 버전) | 🗄️ 참고용 보관, 실제 사용은 `phone_remote_control.py`의 라이다 회피 로직 |
+| `line_tracing.py` / `line_calibration.py` / `color_sample.py` / `line_tracing_with_avoidance.py` | 라인 트레이싱 관련 (보류 중, 시간 남으면 재시도 예정) | 🔄 보류 |
 
 ### Jetson (`~/tensorrt_demos/`, `~/pop/model/`)
 | 파일/폴더 | 설명 |
@@ -279,19 +274,45 @@ YOLOv3-tiny(다크넷 형식) → ONNX(중간 변환 파일) → TensorRT 엔진
 
 ---
 
+## 6-1. 날짜별 작업 기록 (요약, 자세한 내용은 위 섹션 참고)
+
+**2026-07-13**
+- WSL 연습 환경(YOLOv8) 세팅, 오토카(Jetson) YOLOv3-tiny 실시간 탐지 + TensorRT 변환 (FPS 6.0→30.1)
+- 장애물 회피("정지 후 생각" 방식), TTS 음성 알림, 라인 트레이싱 코드 작성 (2-9~2-11)
+- 트랙 현장 라인 색상 보정 시도했으나 역광으로 미완료 (2-10)
+- 라인트레이싱 대신 YOLO 사람 따라가기로 방향 전환, 코드 작성
+
+**2026-07-14**
+- 사람 따라가기 웹 디버깅 화면(`jetson_follow_person_web.py`) 실기 테스트
+- **차가 안 움직이던 원인 발견/수정**: `Car.setSpeed()`가 정지 상태에선 무시되는 함수였음 → `Car.forward(speed)`로 속도 직접 전달하도록 수정
+- **인식 떨림으로 정지↔전진 반복되던 문제 수정**: EMA 스무딩 + 미스 유예(6프레임) + 명령 최소 유지시간(0.4초) 적용
+- 스레드 구조 정리: YOLO/제어(메인) / 화면 그리기·인코딩(별도) / Flask 서버(별도) 3단 분리
+- 거리 판정 기준값 조정 (`0.05/0.1/0.15` → `0.08/0.2/0.35`, 실내 거리에 맞게 완화)
+- 카메라가 천장을 보고 있는 것 재발견 (라인트레이싱 때 각도 그대로 남아있었음, 조정 필요)
+- SSH 직접 접속 환경 구축(비밀번호 없이 명령 실행), 실행 방식을 `nohup`에서 tmux(`autocar` 세션)로 전환
+- 팀 GitHub 저장소 분석 (전체 시스템 구조: 라이다+AI카메라+폰조종+tmux 4분할, 포트 5000 팀원 코드와 겹침 확인), 본인 예전 라이다 코드(`lidar_follow.py`) 재발견
+- 안 쓰는 파일 정리 (WSL/Jetson 양쪽)
+- **팀 저장소의 폰 조종 코드(`app.py`+`remote.html`) 가져와서 통합**: `phone_remote_control.py` 하나로 MANUAL(폰 조종)/AUTO(YOLO 사람 추적) 모드 다 처리하도록 재작성. `jetson_follow_person_web.py`(영상 스트리밍 버전)는 이걸로 완전히 대체되어 삭제
+- **라이다를 항상 최우선 안전장치로 통합**: MANUAL/AUTO 모드 상관없이 좌우 700mm 이내 장애물 감지되면 무조건 회피부터 실행하도록 구현
+- **시동/종료 버튼**: 항상 켜져있는 가벼운 `launcher.py`(포트 5001)를 별도로 만들어서, 여기서 tmux로 무거운 `phone_remote_control.py`를 켜고 끔 (폰에서 버튼으로 시동/종료 가능)
+- **사람 놓치면 카메라로 탐색**: `Car.camPan()`으로 카메라 서보를 90(중앙)→180→0→90 순서로 아주 천천히 왕복(1렙), 20렙 반복해도 못 찾으면 AUTO 모드 자동 종료. 다시 찾으면 그 자리에서 멈추고 바로 추적 재개
+- **원인불명 크래시 2건 해결**:
+  1. 라이다를 별도 스레드로 돌리면 카메라/YOLO와 동시 실행되면서 프로세스가 통째로 죽음 → 스레드 없애고 메인 루프에서 순서대로 처리(폴링)하도록 변경
+  2. 그래도 라이다 연결 시점에 가끔 죽음 → 카메라/GPU가 이미 전력을 쓰는 상태에서 라이다 모터가 추가로 전류를 끌어써서 전원이 불안정해지는 것으로 추정 → 라이다 연결 전 3초 대기(전원 안정화) 추가로 해결
+
+---
+
 ## 6. 다음에 할 일 (TODO)
 
-- [x] ~~`obstacle_avoidance.py`를 TensorRT 기반으로 다시 작성~~ → `jetson_obstacle_avoidance.py` 완료, 실행됨
-- [x] ~~라인 트레이싱 코드 작성~~ → `line_tracing.py`, `line_tracing_with_avoidance.py` 완료 (실기 테스트 전)
-- [x] ~~사람 따라가기 코드 작성~~ → `jetson_follow_person.py` 완료 (실기 테스트 전)
-- [ ] **`jetson_follow_person.py` 실기 테스트** (색상 보정 불필요라 바로 테스트 가능) ← 다음 우선순위
-- [ ] `line_calibration.py`로 실제 트랙 색상 보정 재시도 (오늘 시도했으나 강한 역광으로 미완료, 흐린 날/저녁 + 차양막 준비해서 재시도 필요 — 2-10 참고)
-- [ ] `line_tracing.py` 단독으로 먼저 라인 추적 테스트 (장애물 없이)
-- [ ] `line_tracing_with_avoidance.py`로 장애물 회피 + 라인 복귀 통합 테스트
-- [ ] 라이다를 메인 안전 센서로 실제 연결 및 테스트 (`sensor_fusion.py` 기반)
-- [ ] `sensor_fusion.py`를 Jetson에서 실측하며 카메라 화각(FOV), 라이다 각도 오프셋 보정
-- [ ] 모든 기능(카메라+YOLO+라이다+라인트레이싱+TTS)을 하나의 최종 실행 프로그램으로 통합
-- [ ] daemon(systemctl) 등록해서 전원 켜면 자동 실행되게 설정
+- [x] ~~사람 따라가기 코드 작성 + 실기 디버깅~~ → 속도/떨림 버그 수정 완료
+- [x] ~~라이다 실제 연결 및 테스트~~ → `phone_remote_control.py`에 안전 회피로 통합, 연결 확인됨
+- [x] ~~폰 조종 기능~~ → 팀 저장소 코드 가져와서 통합, 시동/종료 버튼까지 완료
+- [x] ~~사람 놓쳤을 때 카메라 탐색 기능~~ → 완료
+- [ ] **폰으로 MANUAL/AUTO 실기 조종 테스트** (지금 막 안정화됨) ← 다음 우선순위
+- [ ] 카메라 각도 재확인 (라인트레이싱 때 낮췄던 각도가 남아있을 수 있음)
+- [ ] `line_calibration.py`로 실제 트랙 색상 보정 재시도 (시간 남으면, 흐린 날/저녁 + 차양막 준비해서)
+- [ ] TrtYOLO 초기화 시간이 길어서(15초+) 시동 버튼 누른 뒤 대기 시간 있음 - 데모 때 감안 필요
+- [ ] daemon(systemctl) 등록해서 전원 켜면 런처가 자동 실행되게 설정
 
 ---
 

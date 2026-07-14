@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCar Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 15px; -webkit-user-select:none; user-select:none; }
+        h3 { color: #00ffcc; margin-top: 5px; margin-bottom: 15px; }
+        .dashboard { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 10px auto; max-width: 340px; }
+        .data-card { background: #2a2a2a; padding: 12px; border-radius: 10px; border: 1px solid #333; text-align: center; }
+        .data-label { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+        .data-value { font-size: 16px; font-weight: bold; color: #fff; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 14px; font-weight: bold; }
+        .bg-safe { background: #28a745; color: white; }
+        .bg-warn { background: #dc3545; color: white; animation: blink 1s infinite; }
+        .btn { width: 85px; height: 85px; margin: 4px; font-size: 24px; cursor: pointer; background: #333; color: white; border: 2px solid #555; border-radius: 18px; }
+        .btn:active { background: #00ffcc; color: black; border-color: #00ffcc; }
+        .mode-btn { width: 220px; height: 48px; font-size: 16px; margin-top: 15px; background: #007bff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; }
+        .mode-btn.auto { background: #28a745; }
+        .kill-btn { width: 220px; height: 48px; font-size: 16px; margin-top: 8px; background: #dc3545; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <h3>🏎️ 오토카 스마트 판넬</h3>
+    
+    <div class="dashboard">
+        <div class="data-card">
+            <div class="data-label">SYSTEM MODE</div>
+            <div class="data-value" id="lbl-mode" style="color: #00ffcc;">MANUAL</div>
+        </div>
+        <div class="data-card">
+            <div class="data-label">VEHICLE ACT</div>
+            <div class="data-value" id="lbl-act" style="color: #ffcc00;">STOP</div>
+        </div>
+        <div class="data-card">
+            <div class="data-label">STEER / SPEED</div>
+            <div class="data-value" id="lbl-status">0° / 0%</div>
+        </div>
+        <div class="data-card">
+            <div class="data-label">LIDAR SENSOR</div>
+            <div class="data-value"><span id="lbl-obstacle" class="badge bg-safe">CLEAR</span></div>
+        </div>
+    </div>
+    
+    <div style="margin-top: 20px;">
+        <button class="btn" onclick="sendControl(0, 85)">▲</button><br>
+        <button class="btn" onclick="sendControl(-1, 75)">◀</button>
+        <button class="btn" onclick="sendControl(0, 0)">🛑</button>
+        <button class="btn" onclick="sendControl(1, 75)">▶</button><br>
+        <button class="btn" onclick="sendControl(0, -75)">▼</button>
+    </div>
+
+    <button class="mode-btn" id="modeToggle" onclick="toggleMode()">🤖 자율주행 모드 전환</button><br>
+    <button class="kill-btn" onclick="triggerKillSwitch()">🚨 EMERGENCY STOP</button>
+
+    <script>
+        let currentMode = "MANUAL";
+
+        function updateUI(data) {
+            currentMode = data.mode;
+            document.getElementById('lbl-mode').innerText = data.mode;
+            document.getElementById('lbl-act').innerText = data.action_text;
+            
+            let steerText = data.steering === -1 ? "LEFT" : data.steering === 1 ? "RIGHT" : "CENTER";
+            document.getElementById('lbl-status').innerText = `${steerText} / ${data.speed}%`;
+            
+            const obsBadge = document.getElementById('lbl-obstacle');
+            if(data.obstacle === "WARNING") {
+                obsBadge.innerText = "WARNING";
+                obsBadge.className = "badge bg-warn";
+            } else {
+                obsBadge.innerText = "SAFE";
+                obsBadge.className = "badge bg-safe";
+            }
+
+            const modeBtn = document.getElementById('modeToggle');
+            if(currentMode === "AUTO") {
+                modeBtn.innerText = "🕹️ 수동 조종 모드 전환";
+                modeBtn.classList.add('auto');
+            } else {
+                modeBtn.innerText = "🤖 자율주행 모드 전환";
+                modeBtn.classList.remove('auto');
+            }
+        }
+
+        function sendControl(steer, speed) {
+            if(currentMode === "MANUAL") {
+                fetch(`/api/control?steering=${steer}&speed=${speed}`)
+                    .then(res => res.json())
+                    .then(data => updateUI(data));
+            }
+        }
+
+        function toggleMode() {
+            const nextMode = (currentMode === "MANUAL") ? "AUTO" : "MANUAL";
+            fetch(`/api/mode?mode=${nextMode}`)
+                .then(res => res.json())
+                .then(data => updateUI(data));
+        }
+
+        function triggerKillSwitch() {
+            fetch('/api/kill')
+                .then(res => res.json())
+                .then(data => updateUI(data));
+        }
+        
+        // 🔥 [패치된 핵심 루프] 충돌 없는 별도의 status 채널로 대시보드 무한 갱신
+        setInterval(() => {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => updateUI(data));
+        }, 300);
+    </script>
+</body>
+</html>

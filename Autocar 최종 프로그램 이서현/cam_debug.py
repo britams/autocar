@@ -9,7 +9,8 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
 
 # 카메라가 잡고 있는 실제 설정값을 출력.
-print("FOURCC:", int(cap.get(cv2.CAP_PROP_FOURCC)))
+print("FOURCC:", int
+      (cap.get(cv2.CAP_PROP_FOURCC)))
 print("가로:", cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 print("세로:", cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 

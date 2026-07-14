@@ -1,0 +1,6 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/Autocar 최종 프로그램 이서현/.venv/bin/python",
+  "terminal.integrated.env.linux": {
+    "QT_QPA_PLATFORM": "xcb"
+  }
+}
