@@ -16,8 +16,12 @@
         .bg-warn { background: #dc3545; color: white; animation: blink 1s infinite; }
         .btn { width: 85px; height: 85px; margin: 4px; font-size: 24px; cursor: pointer; background: #333; color: white; border: 2px solid #555; border-radius: 18px; }
         .btn:active { background: #00ffcc; color: black; border-color: #00ffcc; }
-        .mode-btn { width: 220px; height: 48px; font-size: 16px; margin-top: 15px; background: #007bff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; }
-        .mode-btn.auto { background: #28a745; }
+        .mode-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 15px; max-width: 340px; margin-left: auto; margin-right: auto; }
+        .mode-btn { height: 44px; font-size: 13px; background: #333; color: white; border: 2px solid #555; border-radius: 12px; cursor: pointer; font-weight: bold; }
+        .mode-btn.active { background: #007bff; border-color: #007bff; }
+        .mode-btn.active.nolidar { background: #ff8800; border-color: #ff8800; }
+        .mode-btn.active.auto { background: #28a745; border-color: #28a745; }
+        .mode-btn.active.line { background: #ffcc00; border-color: #ffcc00; color: #000; }
         .kill-btn { width: 220px; height: 48px; font-size: 16px; margin-top: 8px; background: #dc3545; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
     </style>
@@ -42,8 +46,12 @@
             <div class="data-label">LIDAR SENSOR</div>
             <div class="data-value"><span id="lbl-obstacle" class="badge bg-safe">CLEAR</span></div>
         </div>
+        <div class="data-card">
+            <div class="data-label">CAM TILT</div>
+            <div class="data-value" id="lbl-tilt">0</div>
+        </div>
     </div>
-    
+
     <div style="margin-top: 20px;">
         <button class="btn" onclick="sendControl(0, 85)">▲</button><br>
         <button class="btn" onclick="sendControl(-1, 75)">◀</button>
@@ -52,7 +60,28 @@
         <button class="btn" onclick="sendControl(0, -75)">▼</button>
     </div>
 
-    <button class="mode-btn" id="modeToggle" onclick="toggleMode()">🤖 자율주행 모드 전환</button><br>
+    <div class="mode-row">
+        <button class="mode-btn" onclick="camTilt('up')">📷⬆️ 카메라 위로</button>
+        <button class="mode-btn" onclick="camTilt('down')">📷⬇️ 카메라 아래로</button>
+    </div>
+
+    <div class="mode-row">
+        <button class="mode-btn" id="btnManual" onclick="setMode('MANUAL')">🕹️ 수동 (라이다 O)</button>
+        <button class="mode-btn" id="btnManualNoLidar" onclick="setMode('MANUAL_NOLIDAR')">🕹️ 수동 (라이다 X)</button>
+        <button class="mode-btn" id="btnAuto" onclick="setMode('AUTO')">🤖 사람추적</button>
+        <button class="mode-btn" id="btnLine" onclick="setMode('LINE')">🛣️ 라인트레이싱</button>
+    </div>
+
+    <div class="mode-row">
+        <button class="mode-btn" id="btnLedAuto" onclick="setLed('AUTO')">💡 LED 자동(조도센서)</button>
+        <button class="mode-btn" id="btnLedOn" onclick="setLed('ON')">💡 LED 켜기</button>
+        <button class="mode-btn" id="btnLedOff" onclick="setLed('OFF')">💡 LED 끄기</button>
+    </div>
+    <div id="lineDebugBox" style="display:none; margin-top:12px;">
+        <div style="color:#00ffcc; font-size:13px; margin-bottom:6px;">🖼️ 라인 인식 화면 (초록=인식된 선)</div>
+        <button class="mode-btn" style="width:160px; margin-bottom:8px;" onclick="refreshLineDebug()">🔄 사진 새로고침</button><br>
+        <img id="lineDebugImg" src="" style="max-width:100%; border-radius:10px; border:2px solid #555;">
+    </div>
     <button class="kill-btn" onclick="triggerKillSwitch()">🚨 EMERGENCY STOP</button>
 
     <script>
@@ -75,27 +104,55 @@
                 obsBadge.className = "badge bg-safe";
             }
 
-            const modeBtn = document.getElementById('modeToggle');
-            if(currentMode === "AUTO") {
-                modeBtn.innerText = "🕹️ 수동 조종 모드 전환";
-                modeBtn.classList.add('auto');
-            } else {
-                modeBtn.innerText = "🤖 자율주행 모드 전환";
-                modeBtn.classList.remove('auto');
+            document.getElementById('btnManual').classList.toggle('active', currentMode === "MANUAL");
+            document.getElementById('btnManualNoLidar').classList.toggle('active', currentMode === "MANUAL_NOLIDAR");
+            document.getElementById('btnAuto').classList.toggle('active', currentMode === "AUTO");
+            document.getElementById('btnLine').classList.toggle('active', currentMode === "LINE");
+
+            if (data.cam_tilt !== undefined) {
+                document.getElementById('lbl-tilt').innerText = data.cam_tilt;
+            }
+
+            const showLineDebug = (currentMode === "LINE");
+            document.getElementById('lineDebugBox').style.display = showLineDebug ? "block" : "none";
+            if (showLineDebug && !document.getElementById('lineDebugImg').src) {
+                refreshLineDebug();
+            }
+
+            if (data.led_mode !== undefined) {
+                document.getElementById('btnLedAuto').classList.toggle('active', data.led_mode === "AUTO");
+                document.getElementById('btnLedOn').classList.toggle('active', data.led_mode === "ON");
+                document.getElementById('btnLedOff').classList.toggle('active', data.led_mode === "OFF");
             }
         }
 
+        function setLed(mode) {
+            fetch(`/api/led?mode=${mode}`)
+                .then(res => res.json())
+                .then(data => updateUI(data));
+        }
+
+        // 계속 스트리밍하면 느려지니까, 버튼 누를 때만 최신 한 장 받아옴 (캐시 방지용 timestamp)
+        function refreshLineDebug() {
+            document.getElementById('lineDebugImg').src = '/debug/line.jpg?t=' + Date.now();
+        }
+
+        function camTilt(direction) {
+            fetch(`/api/camtilt?direction=${direction}`)
+                .then(res => res.json())
+                .then(data => updateUI(data));
+        }
+
         function sendControl(steer, speed) {
-            if(currentMode === "MANUAL") {
+            if(currentMode === "MANUAL" || currentMode === "MANUAL_NOLIDAR") {
                 fetch(`/api/control?steering=${steer}&speed=${speed}`)
                     .then(res => res.json())
                     .then(data => updateUI(data));
             }
         }
 
-        function toggleMode() {
-            const nextMode = (currentMode === "MANUAL") ? "AUTO" : "MANUAL";
-            fetch(`/api/mode?mode=${nextMode}`)
+        function setMode(mode) {
+            fetch(`/api/mode?mode=${mode}`)
                 .then(res => res.json())
                 .then(data => updateUI(data));
         }
