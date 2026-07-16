@@ -1,0 +1,732 @@
+<title>오토카 자율주행 프로젝트 — 종합 보고서</title>
+<style>
+  @font-face {
+    font-family: 'UIMono';
+    src: local('SF Mono'), local('Cascadia Mono'), local('Consolas');
+  }
+
+  :root {
+    --bg: #EEF0EC;
+    --bg-raised: #FFFFFF;
+    --ink: #171A17;
+    --ink-soft: #4B5049;
+    --ink-faint: #7B8177;
+    --line: #D6DAD2;
+    --accent: #D14E2A;
+    --accent-ink: #FFFFFF;
+    --accent-soft: #F6DCCF;
+    --ok: #2E8A73;
+    --ok-soft: #DCEEE7;
+    --warn: #B8842A;
+    --warn-soft: #F3E6CC;
+    --chip-open: #8A5A2E;
+    --chip-open-soft: #F1E2CF;
+    --code-bg: #E4E7E0;
+    --shadow: 0 1px 2px rgba(20,22,18,.04), 0 8px 24px -12px rgba(20,22,18,.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171A;
+      --bg-raised: #1C2023;
+      --ink: #ECEEEA;
+      --ink-soft: #ABB2A9;
+      --ink-faint: #767D74;
+      --line: #2C3134;
+      --accent: #F0724A;
+      --accent-ink: #14171A;
+      --accent-soft: #3A2620;
+      --ok: #52BBA0;
+      --ok-soft: #1B2E28;
+      --warn: #E0AC55;
+      --warn-soft: #332A18;
+      --chip-open: #E0AC55;
+      --chip-open-soft: #2E2718;
+      --code-bg: #23282B;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171A; --bg-raised: #1C2023; --ink: #ECEEEA; --ink-soft: #ABB2A9; --ink-faint: #767D74;
+    --line: #2C3134; --accent: #F0724A; --accent-ink: #14171A; --accent-soft: #3A2620;
+    --ok: #52BBA0; --ok-soft: #1B2E28; --warn: #E0AC55; --warn-soft: #332A18;
+    --chip-open: #E0AC55; --chip-open-soft: #2E2718; --code-bg: #23282B;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"] {
+    --bg: #EEF0EC; --bg-raised: #FFFFFF; --ink: #171A17; --ink-soft: #4B5049; --ink-faint: #7B8177;
+    --line: #D6DAD2; --accent: #D14E2A; --accent-ink: #FFFFFF; --accent-soft: #F6DCCF;
+    --ok: #2E8A73; --ok-soft: #DCEEE7; --warn: #B8842A; --warn-soft: #F3E6CC;
+    --chip-open: #8A5A2E; --chip-open-soft: #F1E2CF; --code-bg: #E4E7E0;
+    --shadow: 0 1px 2px rgba(20,22,18,.04), 0 8px 24px -12px rgba(20,22,18,.18);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+    line-height: 1.68;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", "Roboto Mono", monospace; }
+
+  a { color: var(--accent); }
+
+  /* ---- shell layout ---- */
+  .shell {
+    display: grid;
+    grid-template-columns: 260px minmax(0,1fr);
+    max-width: 1240px;
+    margin: 0 auto;
+    gap: 0;
+  }
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .toc { display: none; }
+  }
+
+  .toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 28px 20px 40px 28px;
+    border-right: 1px solid var(--line);
+  }
+  .toc-brand {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .toc-title { font-size: 15px; font-weight: 700; margin: 0 0 22px; color: var(--ink); }
+  .toc nav { display: flex; flex-direction: column; gap: 2px; }
+  .toc-h1 {
+    display: block; font-size: 13px; font-weight: 700; color: var(--ink);
+    padding: 9px 10px; border-radius: 7px; text-decoration: none;
+    font-family: ui-monospace, "SF Mono", monospace;
+  }
+  .toc-h1:hover { background: var(--bg-raised); }
+  .toc-h2 {
+    display: block; font-size: 12.5px; color: var(--ink-soft); text-decoration: none;
+    padding: 6px 10px 6px 22px; border-radius: 7px;
+  }
+  .toc-h2:hover { background: var(--bg-raised); color: var(--ink); }
+  .toc-foot { margin-top: 26px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--ink-faint); }
+
+  main { padding: 0 0 120px; min-width: 0; }
+
+  /* ---- hero ---- */
+  .hero {
+    padding: 56px 56px 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  @media (max-width: 640px) { .hero { padding: 40px 22px 28px; } }
+  .hero-eyebrow {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 14px;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    font-weight: 800;
+  }
+  .hero p.lede {
+    font-size: 16.5px; color: var(--ink-soft); max-width: 62ch; margin: 0 0 28px;
+  }
+  .hero-photo {
+    display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; margin-top: 8px;
+  }
+  @media (max-width: 640px) { .hero-photo { grid-template-columns: 1fr; } }
+  .hero-photo figure { margin: 0; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--line); background: var(--bg-raised); }
+  .hero-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .hero-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 22px; max-width: 640px;
+  }
+  .stat {
+    background: var(--bg-raised); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  }
+  .stat .num { font-family: ui-monospace, "SF Mono", monospace; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .lbl { font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
+
+  /* ---- sections ---- */
+  section.block { padding: 52px 56px; border-bottom: 1px solid var(--line); }
+  @media (max-width: 640px) { section.block { padding: 36px 22px; } }
+  section.block:last-of-type { border-bottom: none; }
+
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; }
+  .sec-num {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 13px; color: var(--accent); font-weight: 700;
+  }
+  .sec-head h2 { font-size: 26px; margin: 0; font-weight: 800; letter-spacing: -.01em; text-wrap: balance; }
+  .sec-intro { color: var(--ink-soft); max-width: 68ch; margin: 10px 0 34px; font-size: 15.5px; }
+
+  h3.sub {
+    font-size: 18px; font-weight: 700; margin: 40px 0 12px; padding-top: 4px;
+    display: flex; align-items: center; gap: 9px;
+  }
+  h3.sub:first-of-type { margin-top: 8px; }
+  h4.micro {
+    font-size: 13.5px; font-weight: 700; margin: 20px 0 8px; color: var(--ink);
+  }
+  p { max-width: 68ch; }
+  .prose ul { max-width: 68ch; padding-left: 1.15em; }
+  .prose li { margin: 6px 0; }
+  .prose li::marker { color: var(--accent); }
+
+  /* status chips */
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700;
+    padding: 3px 9px 3px 8px; border-radius: 999px; font-family: ui-monospace, "SF Mono", monospace;
+    white-space: nowrap; letter-spacing: .01em;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .chip.ok { background: var(--ok-soft); color: var(--ok); }
+  .chip.open { background: var(--chip-open-soft); color: var(--chip-open); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); }
+
+  /* problem -> solution cards */
+  .cycle {
+    border: 1px solid var(--line); border-radius: 14px; background: var(--bg-raised);
+    margin: 16px 0 28px; overflow: hidden; box-shadow: var(--shadow);
+  }
+  .cycle-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 60%, transparent);
+  }
+  .cycle-head h4 { margin: 0; font-size: 14.5px; font-weight: 700; }
+  .cycle-id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-faint); }
+  .cycle-body { display: grid; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 720px) { .cycle-body { grid-template-columns: 1fr; } }
+  .cycle-col { padding: 16px 18px; font-size: 14px; color: var(--ink-soft); }
+  .cycle-col + .cycle-col { border-left: 1px solid var(--line); }
+  @media (max-width: 720px) { .cycle-col + .cycle-col { border-left: none; border-top: 1px solid var(--line); } }
+  .cycle-col .k {
+    font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    font-weight: 700; margin-bottom: 8px; display: block;
+  }
+  .cycle-col.problem .k { color: var(--warn); }
+  .cycle-col.solution .k { color: var(--ok); }
+  .cycle-col p { margin: 0; max-width: 100%; }
+  .cycle-col code { font-size: 12.5px; }
+
+  /* tables */
+  .twrap { overflow-x: auto; margin: 18px 0 28px; border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--bg-raised); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: ui-monospace, monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); font-weight: 700; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  /* mini bar for recognition rate */
+  .rate { display: flex; align-items: center; gap: 8px; }
+  .rate-track { flex: 1; height: 6px; border-radius: 4px; background: var(--code-bg); min-width: 60px; overflow: hidden; }
+  .rate-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .rate-num { font-family: ui-monospace, monospace; font-size: 12px; font-variant-numeric: tabular-nums; width: 42px; text-align: right; }
+
+  /* fps compare */
+  .fps-compare { display: flex; gap: 28px; align-items: flex-end; margin: 22px 0 8px; padding: 20px; background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px; }
+  .fps-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .fps-bar .track { width: 100%; max-width: 80px; height: 160px; background: var(--code-bg); border-radius: 8px; display: flex; align-items: flex-end; overflow: hidden; }
+  .fps-bar .fill { width: 100%; border-radius: 8px 8px 0 0; }
+  .fps-bar.before .fill { background: var(--warn); }
+  .fps-bar.after .fill { background: var(--ok); }
+  .fps-bar .val { font-family: ui-monospace, monospace; font-weight: 700; font-size: 16px; }
+  .fps-bar .lbl { font-size: 12px; color: var(--ink-faint); }
+  .fps-arrow { align-self: center; color: var(--ink-faint); font-size: 22px; padding-bottom: 60px; }
+
+  /* photo grid */
+  figure.shot { margin: 22px 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--bg-raised); box-shadow: var(--shadow); }
+  figure.shot img { width: 100%; display: block; }
+  figure.shot figcaption { padding: 12px 16px; font-size: 12.5px; color: var(--ink-faint); border-top: 1px solid var(--line); }
+  .shot-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0; }
+  @media (max-width: 640px) { .shot-pair { grid-template-columns: 1fr; } }
+  .shot-pair figure.shot { margin: 0; }
+
+  /* role split diagram */
+  .roles { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: stretch; margin: 22px 0 30px; }
+  @media (max-width: 640px) { .roles { grid-template-columns: 1fr; } }
+  .role-card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .role-card .role-tag { font-family: ui-monospace, monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+  .role-card.lidar .role-tag { color: var(--accent); }
+  .role-card.ai .role-tag { color: var(--ok); }
+  .role-card h5 { margin: 8px 0 6px; font-size: 16px; }
+  .role-card p { margin: 0; font-size: 13.5px; color: var(--ink-soft); max-width: 100%; }
+  .roles-vs { display: flex; align-items: center; justify-content: center; font-family: ui-monospace, monospace; color: var(--ink-faint); font-size: 12px; }
+  @media (max-width: 640px) { .roles-vs { padding: 4px 0; } }
+
+  /* thread diagram */
+  .threads { display: flex; flex-direction: column; gap: 10px; margin: 22px 0 30px; }
+  .thread-row { display: grid; grid-template-columns: 150px 1fr; gap: 14px; align-items: center; }
+  @media (max-width: 560px) { .thread-row { grid-template-columns: 1fr; } }
+  .thread-tag {
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; padding: 6px 10px;
+    border-radius: 8px; text-align: center; background: var(--code-bg); color: var(--ink-soft);
+  }
+  .thread-row:nth-child(1) .thread-tag { background: var(--accent-soft); color: var(--accent); }
+  .thread-row:nth-child(2) .thread-tag { background: var(--ok-soft); color: var(--ok); }
+  .thread-row:nth-child(3) .thread-tag { background: var(--warn-soft); color: var(--warn); }
+  .thread-desc { font-size: 13.5px; color: var(--ink-soft); background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+
+  code, .codeblock { font-family: ui-monospace, "SF Mono", "Cascadia Mono", monospace; }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; font-size: 12.8px; }
+  .codeblock {
+    background: var(--code-bg); border-radius: 10px; padding: 14px 16px; font-size: 12.8px;
+    overflow-x: auto; white-space: pre; margin: 16px 0; color: var(--ink-soft); line-height: 1.6;
+  }
+
+  blockquote.pull {
+    margin: 28px 0; padding: 4px 0 4px 20px; border-left: 3px solid var(--accent);
+    font-size: 17px; font-weight: 600; max-width: 56ch; text-wrap: balance;
+  }
+
+  .callout {
+    display: flex; gap: 12px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+    border-radius: 12px; padding: 16px 18px; margin: 22px 0; font-size: 13.8px; color: var(--ink);
+  }
+  .callout .dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); margin-top: 7px; }
+  .callout.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  .callout.ok .dot { background: var(--ok); }
+
+  /* conclusion summary grid */
+  .final-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 20px 0 30px; }
+  @media (max-width: 640px) { .final-grid { grid-template-columns: 1fr; } }
+  .final-card { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .final-card .k { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+  .final-card p { margin: 8px 0 0; font-size: 14px; color: var(--ink-soft); max-width: 100%; }
+
+  /* roadmap */
+  .roadmap { display: flex; flex-direction: column; margin: 22px 0 10px; }
+  .road-item {
+    display: grid; grid-template-columns: 84px 1fr; gap: 18px; padding: 18px 0; border-top: 1px solid var(--line);
+  }
+  .road-item:last-child { padding-bottom: 0; }
+  @media (max-width: 560px) { .road-item { grid-template-columns: 1fr; gap: 6px; } }
+  .road-pri {
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; color: var(--accent);
+    padding-top: 3px;
+  }
+  .road-body h5 { margin: 0 0 6px; font-size: 15.5px; }
+  .road-body p { margin: 0; font-size: 13.8px; color: var(--ink-soft); max-width: 66ch; }
+
+  footer.page-foot {
+    padding: 40px 56px 60px; color: var(--ink-faint); font-size: 12.5px;
+  }
+  @media (max-width: 640px) { footer.page-foot { padding: 30px 22px 50px; } }
+</style>
+
+<div class="shell">
+  <aside class="toc">
+    <div class="toc-brand">AUTOCAR // FIELD REPORT</div>
+    <div class="toc-title">오토카 자율주행 프로젝트</div>
+    <nav>
+      <a class="toc-h1" href="#exec">01 · 실행한 것</a>
+      <a class="toc-h2" href="#exec-people">사람 따라가기 (YOLO)</a>
+      <a class="toc-h2" href="#exec-line">라인트레이싱 (OpenCV)</a>
+      <a class="toc-h2" href="#exec-roles">라이다 · AI 역할 분담</a>
+      <a class="toc-h2" href="#exec-thread">스레드/프로세스 구조</a>
+      <a class="toc-h2" href="#exec-infra">공통 인프라</a>
+      <a class="toc-h1" href="#loop">02 · 반복 — 문제 → 해결</a>
+      <a class="toc-h2" href="#loop-yolo">YOLO 가속 여정</a>
+      <a class="toc-h2" href="#loop-line">라인 인식 시행착오</a>
+      <a class="toc-h2" href="#loop-stability">안정성 문제</a>
+      <a class="toc-h2" href="#loop-open">아직 못 푼 것</a>
+      <a class="toc-h1" href="#result">03 · 결과 및 결론</a>
+      <a class="toc-h1" href="#next">04 · 향후 진행 방향</a>
+    </nav>
+    <div class="toc-foot">Jetson Nano 기반 · YOLOv3-tiny + TensorRT · OpenCV 라인트레이싱 · 라이다 안전계층</div>
+  </aside>
+
+  <main>
+    <div class="hero">
+      <div class="hero-eyebrow">AutoCar Prime + NX · 자율주행 종합 보고서</div>
+      <h1>사람을 따라가고, 선을 따라가는<br>Jetson 오토카 만들기</h1>
+      <p class="lede">Jetson Nano 한 대에 YOLO 딥러닝과 OpenCV 규칙기반 인식을 각각 붙여, 사람 추적(AUTO)과 라인트레이싱(LINE) 두 가지 자율주행 모드를 만들고, 라이다를 모든 모드 위의 안전계층으로 둔 기록.</p>
+
+      <div class="hero-photo">
+        <figure><img src="hero_control.jpg" alt="운동장 트랙에서 폰으로 오토카를 조종하는 모습" loading="lazy"></figure>
+        <figure><img src="aerial_track.jpg" alt="트랙 위 오토카를 위에서 내려다본 모습" loading="lazy"></figure>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat"><div class="num">6.0 → 30.1</div><div class="lbl">YOLO FPS (TensorRT 변환 후)</div></div>
+        <div class="stat"><div class="num">2</div><div class="lbl">자율주행 모드 (AUTO / LINE)</div></div>
+        <div class="stat"><div class="num">1300mm</div><div class="lbl">라이다 안전 감지 거리</div></div>
+      </div>
+    </div>
+
+    <!-- ============ 01 실행한 것 ============ -->
+    <section class="block prose" id="exec">
+      <div class="sec-head"><span class="sec-num">01</span><h2>실행한 것</h2></div>
+      <p class="sec-intro">메인 기능은 두 가지다 — 카메라로 사람을 찾아 쫓아가는 <strong>YOLO 사람 따라가기</strong>, 그리고 흰 선을 보고 트랙을 도는 <strong>OpenCV 라인트레이싱</strong>. 여기에 라이다 장애물 감지를 모든 모드 위에 두는 안전계층으로 얹고, 폰 웹뷰 하나로 전부 조종한다.</p>
+
+      <div class="twrap">
+        <table>
+          <thead><tr><th>구분</th><th>사람 따라가기</th><th>라인트레이싱</th></tr></thead>
+          <tbody>
+            <tr><td>사용 기술</td><td>YOLOv3-tiny (딥러닝 객체 탐지) + TensorRT</td><td>OpenCV 영상처리 (규칙 기반)</td></tr>
+            <tr><td>하는 일</td><td>화면에서 "사람"을 찾아 박스로 표시</td><td>흰 선의 위치(x좌표)를 계산</td></tr>
+            <tr><td>연산 위치</td><td>GPU (TensorRT로 가속)</td><td>CPU</td></tr>
+            <tr><td>판단 방식</td><td>학습된 모델이 "사람이다"를 판단</td><td>밝기/모양 규칙으로 "선이다"를 판단</td></tr>
+            <tr><td>장점</td><td>복잡한 대상도 정확히 구분</td><td>가볍고 빠름, 학습 데이터 불필요</td></tr>
+            <tr><td>단점</td><td>모델이 무겁고 GPU 자원 많이 씀</td><td>조명·다른 흰 무늬에 취약</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:13.5px;color:var(--ink-faint)">카메라를 하나만 쓰기 때문에 두 기능은 동시에 실행되지 않는다. 폰에서 모드를 전환하면 그 모드에 맞는 인식 방식으로 전환되는 구조다.</p>
+
+      <h3 class="sub" id="exec-people">🏃 사람 따라가기 (YOLO)</h3>
+
+      <h4 class="micro">YOLO 객체 탐지 최적화</h4>
+      <div class="fps-compare">
+        <div class="fps-bar before">
+          <div class="val">6.0</div>
+          <div class="track"><div class="fill" style="height:20%"></div></div>
+          <div class="lbl">CPU (OpenCV DNN)</div>
+        </div>
+        <div class="fps-arrow">→</div>
+        <div class="fps-bar after">
+          <div class="val">30.1</div>
+          <div class="track"><div class="fill" style="height:100%"></div></div>
+          <div class="lbl">TensorRT 가속</div>
+        </div>
+      </div>
+      <p>Jetson Nano에서 YOLOv3-tiny를 <strong>TensorRT</strong>(NVIDIA 모델 최적화 도구)로 변환해서 5배 빠른 실시간 탐지를 만들었다. 6 FPS는 영상이 뚝뚝 끊겨 실시간 대응이 어려운 수준, 30 FPS는 사람 눈에 부드럽게 느껴지는 "실시간" 수준이다.</p>
+
+      <h4 class="micro">왜 YOLOv4가 아니라 YOLOv3-tiny인가</h4>
+      <p>YOLOv4(약 6,400만 파라미터)는 YOLOv3-tiny(약 880만 파라미터)보다 정확하지만 7배 무겁다. Jetson Nano에 YOLOv4를 올리면 FPS가 한 자릿수로 떨어질 것으로 예상되는데, 자율주행차가 초당 2~3프레임으로 판단하면 장애물을 발견했을 때 이미 늦다. 정확도를 다소 포기하더라도 실시간이 가능한 쪽을 택했다.</p>
+
+      <h4 class="micro">실기 디버깅</h4>
+      <div class="prose">
+        <ul>
+          <li>차가 안 움직이던 원인: <code>setSpeed()</code>가 "이미 주행 중"일 때만 반영되는 함수라 정지 상태에서 무효였음 → <code>forward(speed)</code>로 직접 전달하도록 수정</li>
+          <li>인식 떨림으로 정지↔전진이 반복되던 문제: 스무딩(급격한 변화 방지) + 디바운스(짧은 오차 무시)로 해결</li>
+        </ul>
+      </div>
+
+      <h4 class="micro">사람 놓치면 카메라 탐색</h4>
+      <p>사람을 놓치면 카메라 서보를 90°(중앙)→0°→180°→90° 순서로 천천히 왕복(최대 20회)하며 찾는다. 인식이 깜빡거릴 때마다 탐색이 리셋되지 않도록, 연속 3프레임 이상 확인돼야 "진짜로 찾음"으로 인정한다.</p>
+
+      <h3 class="sub" id="exec-line">🛣️ 라인트레이싱 (OpenCV)</h3>
+      <p>카메라 화면에서 흰 선을 찾아 화면 중앙에 오도록 조향한다. "주변 트랙보다 상대적으로 밝은가"를 기준으로 판단(적응형 임계값)해서 날씨·노출이 바뀌어도 안정적으로 동작하게 만들었다.</p>
+
+      <div class="shot-pair">
+        <figure class="shot">
+          <img src="backlit_raw.jpg" alt="역광으로 하얗게 날아간 트랙 원본 사진" loading="lazy">
+          <figcaption>역광 상태의 원본 화면 — 해를 정면으로 보고 있어 절반이 하얗게 날아갔다</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="backlit_mask.jpg" alt="초록색 마스크가 하늘까지 뒤덮은 잘못된 인식 결과" loading="lazy">
+          <figcaption>같은 장면의 초기 색상 인식 결과 — 하늘/배경까지 통째로 "선"으로 오인식됐다</figcaption>
+        </figure>
+      </div>
+
+      <h4 class="micro">오인식 방지</h4>
+      <div class="prose">
+        <ul>
+          <li>인식 범위(ROI)를 화면 아래쪽 50~55%로 좁혀 하늘·건물을 분석 대상에서 제외</li>
+          <li>일정 크기 이상 뭉친 덩어리만 선으로 인정해 트랙 균열 노이즈 제거</li>
+          <li>끊어진 점선 조각들을 먼저 이어붙인 뒤 하나의 선으로 판단</li>
+          <li>"양옆 두 선 사이 중앙 유지" 대신, 실제 트랙 구조(중앙 점선 하나)에 맞춰 <strong>가장 크게 잡힌 흰 선 덩어리 하나를 추적</strong>하는 방식으로 확정</li>
+          <li>LINE 모드 진입 시 카메라를 좌우 정중앙(pan 90°) + 아래쪽(tilt -10°)으로 자동 정렬</li>
+        </ul>
+      </div>
+
+      <h4 class="micro">디버그 화면 — 스트리밍 대신 새로고침</h4>
+      <p>인식 중인 화면(선을 초록색으로 표시)을 조종 화면에 내장했다. 계속 스트리밍하면 처리 부하가 커져 반응 속도가 크게 느려지기 때문에, 새로고침 버튼을 누를 때만 사진 한 장을 받아오는 방식을 택했다.</p>
+
+      <h4 class="micro">장애물 대응 — 정지 후 재출발</h4>
+      <p>라인트레이싱 중 장애물을 만나면 <strong>일단 멈췄다가 사라지면 다시 출발</strong>한다. 후진·회전 회피는 하지 않는데, 자세한 이유는 02장에서 다룬다.</p>
+
+      <h3 class="sub" id="exec-roles">🚦 라이다 · AI 역할 분담 — 안전 우선순위 교통정리</h3>
+      <p>라이다(장애물 감지)와 AI 인식(YOLO/OpenCV)은 같은 층위에서 경쟁하지 않는다. <strong>라이다가 항상 최우선</strong>으로 개입하는 위계로 나눴다.</p>
+
+      <div class="roles">
+        <div class="role-card lidar">
+          <div class="role-tag">최종 결정권자</div>
+          <h5>라이다</h5>
+          <p>매 프레임 가장 먼저 좌/우 근접 장애물을 확인한다. 감지되면 모드와 상관없이 그 프레임에서는 AI 인식 로직을 아예 실행하지 않고 회피(또는 정지) 동작만 한다.</p>
+        </div>
+        <div class="roles-vs">항상<br>우선</div>
+        <div class="role-card ai">
+          <div class="role-tag">평상시 주행 담당</div>
+          <h5>YOLO / OpenCV</h5>
+          <p>장애물이 없을 때만 각 모드(사람 추적 / 라인 추적)의 인식 로직이 실행된다. 딱 하나 예외는 "MANUAL_NOLIDAR" — 벽에 붙여 조종해야 할 때만 라이다 개입을 끌 수 있다.</p>
+        </div>
+      </div>
+      <blockquote class="pull">라이다가 "멈출지 말지"를 결정하는 안전 담당, AI는 그 위에 얹히는 평상시 주행 담당.</blockquote>
+      <p style="font-size:13.5px;color:var(--ink-faint)">이렇게 나누지 않고 두 판단을 동시에 반영했다면, "AI는 전진하라는데 라이다는 멈추라"는 상황에서 어느 쪽을 따를지 애매해졌을 것이다.</p>
+
+      <h3 class="sub" id="exec-thread">⚙️ 스레드 / 프로세스 구조</h3>
+      <p>"동시에 여러 일을 처리하는 방식"은 세 층으로 나뉜다.</p>
+      <div class="threads">
+        <div class="thread-row">
+          <div class="thread-tag">메인 스레드</div>
+          <div class="thread-desc">카메라 읽기 · YOLO 인식 · 라인트레이싱 인식 · 모터 제어. YOLO의 GPU 연산(pycuda)이 "처음 초기화된 스레드에서만 동작"하는 제약이 있어 반드시 여기서 돌려야 했다.</div>
+        </div>
+        <div class="thread-row">
+          <div class="thread-tag">별도 스레드 1개</div>
+          <div class="thread-desc">폰과 통신하는 Flask 웹서버. 메인 스레드가 카메라/모터로 바쁜 동안에도 폰의 모드 전환·조향 명령을 받아야 해서 분리했다.</div>
+        </div>
+        <div class="thread-row">
+          <div class="thread-tag">별도 프로세스 1개</div>
+          <div class="thread-desc">라이다는 스레드가 아니라 완전히 다른 프로그램(프로세스)으로 분리했다 — 이유는 02장 참고. 스레드로 돌리면 GIL 문제로 프로그램 전체가 죽었다.</div>
+        </div>
+      </div>
+      <p style="font-size:13.5px;color:var(--ink-faint)">가벼운 통신(폰)은 스레드로, 무거운 하드웨어 작업(카메라/YOLO)은 메인 스레드로, 불안정한 하드웨어 작업(라이다)은 아예 별도 프로세스로 — 나눈 기준은 "안정성이 얼마나 중요한가"였다.</p>
+
+      <div class="shot-pair">
+        <figure class="shot">
+          <img src="lidar_assembly.jpg" alt="라이다/하드웨어를 직접 조립·점검하는 모습" loading="lazy">
+          <figcaption>라이다 배선을 직접 확인하며 실기 디버깅하는 모습</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="chassis_indoor.jpg" alt="AIoT AutoCAR Prime 섀시 클로즈업" loading="lazy">
+          <figcaption>AIoT AutoCAR Prime 섀시 — 카메라, 라이다, PWM 컨트롤러가 한 보드에 얹혀있다</figcaption>
+        </figure>
+      </div>
+
+      <h3 class="sub" id="exec-infra">🔌 공통 인프라</h3>
+      <div class="prose">
+        <ul>
+          <li><strong>조도센서 + LED 자동 제어</strong> — 조도센서(SPI ADC 채널 7) 값을 보고 어두워지면 LED 자동 점등, 밝아지면 소등. 수동 켜기/끄기도 가능</li>
+          <li><strong>폰 핫스팟 + 웹뷰</strong> — 폰 핫스팟을 공유기 대신 쓰고, 그 네트워크 안에서 폰 브라우저로 접속해 조종하는 대시보드 구현</li>
+          <li><strong>Tmux 서버 2개 분리 실행</strong> — <code>launcher</code>(관리자, 포트 5001, 시동/종료만 처리)와 <code>autocar</code>(실제 작업, 포트 5000, 카메라+YOLO+라인+라이다 통합)를 분리. launcher는 리모컨, 메인 프로그램은 TV — 메인 프로그램을 몇 번 껐다 켜도 리모컨(관리자)은 항상 살아있어야 폰으로 계속 제어할 수 있기 때문</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 02 반복 ============ -->
+    <section class="block prose" id="loop">
+      <div class="sec-head"><span class="sec-num">02</span><h2>반복 — 문제 → 해결</h2></div>
+      <p class="sec-intro">이 프로젝트의 실제 작업 시간 대부분은 "한 번에 됨"이 아니라 <strong>시도 → 실패 → 원인 파악 → 재시도</strong>의 반복이었다. 특히 라인 인식 색상 보정은 8차 시도까지 갔다.</p>
+
+      <h3 class="sub" id="loop-yolo">YOLO 가속 여정 — TensorRT까지 가는 길</h3>
+      <p>YOLOv4-tiny로 먼저 시도했다가 이 Jetson의 구버전 OpenCV(4.3.0)가 YOLOv4의 최신 구조를 지원하지 않아 실패했고, YOLOv3-tiny + CUDA DNN도 빌드 문제로 막혀 결국 TensorRT 변환으로 우회했다. 그 과정에서 만난 7단계 문제:</p>
+
+      <div class="twrap">
+        <table>
+          <thead><tr><th class="num">#</th><th>문제</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1</td><td><code>onnx==1.4.1</code> 설치 실패</td><td>onnx·protobuf 버전 불일치</td><td><code>onnx==1.9.0</code> + 최신 protobuf로 재설치</td></tr>
+            <tr><td class="num">2</td><td><code>nvcc not found</code></td><td>CUDA 툴킷 경로가 PATH에 없음</td><td><code>~/.bashrc</code>에 CUDA 경로 추가</td></tr>
+            <tr><td class="num">3</td><td>pycuda 설치 스크립트 중단</td><td>스크립트 내부 로직 버그</td><td><code>pip3 install pycuda</code>로 직접 설치</td></tr>
+            <tr><td class="num">4</td><td>변환 스크립트 "file not found"</td><td>파일명에 해상도(-416) 누락</td><td><code>yolov3-tiny-416.cfg/.weights</code>로 이름 통일</td></tr>
+            <tr><td class="num">5</td><td><code>libyolo_layer.so</code> 없음</td><td>plugins 폴더 빌드(make) 안 함</td><td><code>cd plugins && make</code></td></tr>
+            <tr><td class="num">6</td><td><code>make</code> 자체가 실패</td><td>Makefile 정규식의 <code>#</code>을 주석으로 오인</td><td><code>grep -Po</code> 대신 <code>awk</code>로 대체</td></tr>
+            <tr><td class="num">7</td><td><code>build_serialized_network</code> 없음</td><td>설치된 TensorRT(7.1.3)가 그 함수를 지원하는 8버전보다 낮음</td><td>TensorRT 7 API인 <code>build_engine</code>으로 수정</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout ok"><div class="dot"></div><div><strong>결과</strong> — <code>yolov3-tiny-416.trt</code> 엔진 생성 성공, 실시간 카메라 테스트에서 <strong>FPS 30.1</strong> 확인 (기존 6.0 대비 5배).</div></div>
+
+      <h3 class="sub" id="loop-line">라인 인식 시행착오 — 8차 색상 보정 + 재설계</h3>
+      <p>운동장 트랙 현장에서 <code>line_calibration.py</code>로 흰 선 색상 기준을 맞추는 데만 8번의 시도가 있었다. 핵심 방해 요소는 <strong>역광</strong>이었다.</p>
+
+      <div class="shot-pair">
+        <figure class="shot">
+          <img src="sunny_test.jpg" alt="맑은 날 햇빛 아래에서 트랙 위 오토카를 테스트하는 모습" loading="lazy">
+          <figcaption>맑은 날 정오 무렵 — 역광 문제가 가장 심하게 나타난 조건</figcaption>
+        </figure>
+        <figure class="shot" style="display:flex;align-items:center;justify-content:center;padding:20px;">
+          <div style="width:100%">
+            <table style="width:100%;font-size:12.5px;">
+              <tbody>
+                <tr><td style="padding:4px 0;border:none;color:var(--ink-faint)">1차 · 역광 상태</td><td style="padding:4px 0;border:none;" class="num">64.6%</td></tr>
+                <tr><td style="padding:4px 0;border:none;color:var(--ink-faint)">3차 · ROI 25%</td><td style="padding:4px 0;border:none;" class="num">93.9%</td></tr>
+                <tr><td style="padding:4px 0;border:none;color:var(--ink-faint)">6차 · 지평선 제거</td><td style="padding:4px 0;border:none;" class="num">2.7%</td></tr>
+                <tr><td style="padding:4px 0;border:none;color:var(--ink-faint)">8차 · HSV 직접 측정</td><td style="padding:4px 0;border:none;color:var(--ink-faint);font-size:11.5px">색 대비 거의 없음 확인</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </figure>
+      </div>
+
+      <div class="twrap">
+        <table>
+          <thead><tr><th class="num">시도</th><th>조건</th><th>인식 비율</th><th>문제</th></tr></thead>
+          <tbody>
+            <tr><td class="num">1차</td><td>해를 정면으로 봄, HSV 흰/노랑 고정값</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:64.6%"></div></div><span class="rate-num">64.6%</span></div></td><td>역광 과다노출로 하늘과 선을 구분 못함</td></tr>
+            <tr><td class="num">2차</td><td>Otsu 자동 임계값</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:65.4%"></div></div><span class="rate-num">65.4%</span></div></td><td>역광 문제 그대로, 큰 차이 없음</td></tr>
+            <tr><td class="num">3차</td><td>채도(S) 기준, ROI 아래 25%</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:93.9%"></div></div><span class="rate-num">93.9%</span></div></td><td>ROI가 선 없는 순수 트랙 바닥만 봄</td></tr>
+            <tr><td class="num">4차</td><td>ROI 40~100%로 확대</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:37%"></div></div><span class="rate-num">33~40%</span></div></td><td>지평선(나무/건물)까지 밝게 잡혀 오인식</td></tr>
+            <tr><td class="num">5차</td><td>해를 등지게 회전, ROI 52~100%</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:26.1%"></div></div><span class="rate-num">26.1%</span></div></td><td>여전히 배경 일부 포함</td></tr>
+            <tr><td class="num">6차</td><td>카메라 각도를 손으로 낮춰 지평선 제거</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:2.7%"></div></div><span class="rate-num">2.7%</span></div></td><td>역광은 해결됐지만 기준이 너무 엄격해 선을 거의 못 잡음</td></tr>
+            <tr><td class="num">7차</td><td>채도/명도 기준 완화 (S&lt;70, V&gt;170)</td><td><div class="rate"><div class="rate-track"><div class="rate-fill" style="width:64.6%"></div></div><span class="rate-num">64.6%</span></div></td><td>너무 헐렁해져서 트랙 바닥 전체가 다 잡힘</td></tr>
+            <tr><td class="num">8차</td><td><code>color_sample.py</code>로 선/트랙 HSV 직접 측정</td><td>—</td><td>선(S 52~74)과 트랙(S 65)의 채도 차이가 거의 없음을 확인</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:13.5px;color:var(--ink-faint)">8차 시도 끝에 내린 결론: 이 조명 조건(핑크빛 도는 색감)에서는 <strong>색상 고정값 튜닝만으로는 한계</strong>가 있다. 이후 "밝기 고정값" 대신 "주변보다 상대적으로 밝은가"를 보는 적응형 임계값으로 접근 자체를 바꾼 것이 최종 해결의 출발점이 됐다.</p>
+
+      <p>이후 실제 라인트레이싱을 폰 모드로 통합하고 나서도 문제는 이어졌다:</p>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>흰 선을 아예 못 찾음</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>"밝기 170 이상 = 흰색"이라는 절대 기준이, 흐린 날 어둡게 찍힌 화면에서는 흰 선도 못 넘어 인식 자체가 안 됨</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>"주변 트랙보다 상대적으로 밝은가"를 보는 적응형 임계값(adaptiveThreshold)으로 교체. 날씨·노출이 바뀌어도 안정적</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>하늘/건물/트랙 균열 오인식</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>인식 범위가 화면 위쪽 25%부터라 하늘·건물 윤곽선까지 포함, 트랙 균열도 밝기 차이로 노이즈로 걸림</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>인식 범위를 화면 아래 55%(트랙 바닥만)로 축소 + 일정 크기 이상 뭉친 덩어리만 선으로 인정</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>점선이 끊어져 조각이 너무 작음</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>트랙 페인트가 닳아 점선처럼 끊어져 있어, 조각 하나하나가 크기 필터에 걸려 다 무시됨</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>끊어진 조각들을 먼저 이어붙인(dilate) 다음 필터링하도록 수정</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>카메라 프레임이 밀림</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>GStreamer <code>appsink</code>에 "오래된 프레임 버리기" 설정이 없어, 처리가 느려지면 몇 초 전 화면이 계속 나옴</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p><code>appsink drop=true max-buffers=1 sync=false</code> 추가. 카메라를 여는 코드가 한 곳뿐이라 다른 모드(YOLO)에도 동일 적용됨</p></div>
+        </div>
+      </div>
+
+      <h3 class="sub" id="loop-stability">안정성 문제 — 라이다와 씨름한 기록</h3>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>라이다를 스레드로 돌리면 프로그램 전체가 죽음</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>파이썬 GIL(한 번에 딱 한 스레드만 코드 실행) 특성상, 라이다의 네이티브 코드가 하드웨어 응답을 기다리며 GIL을 계속 붙잡고 있으면 카메라/YOLO가 도는 메인 스레드까지 통째로 멈춤</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>라이다를 스레드가 아니라 완전히 별도의 <strong>프로세스</strong>로 분리. 프로세스는 각자 자기만의 GIL을 가져 서로 영향받지 않음</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>카메라+라이다 동시 자원 사용 시 멈춤</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>라이다 연결 순간 카메라/GPU가 이미 자원을 쓰고 있으면 연결 과정에서 멈추는 경우 발생</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>연결 전 대기 시간 + 연결 시도 자체에 제한시간을 둬서, 시간 안에 안 되면 라이다 없이도 나머지는 정상 작동</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>별도 프로세스로 분리해도 그 자체가 멈춤</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>라이다를 완전히 분리한 뒤에도, 그 프로세스가 <code>connect()</code> 도중 응답 없이 완전히 멈춰버리는 일이 실제로 있었음</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>감시자(부모)–작업자(자식) 이중 구조. 자식이 10초 안에 연결 못 하면 부모가 강제로 죽이고 새 자식으로 재시도</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>사람 여러 명 있으면 다른 사람으로 갈아탐</h4><span class="chip ok">해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p><code>get_person_box()</code>가 매 프레임 "제일 큰(가까운) 사람"만 골라서, 더 가까운 사람이 나타나면 추적 대상이 바뀜</p></div>
+          <div class="cycle-col solution"><span class="k">해결</span><p>직전에 추적하던 사람 위치와 가장 가까운 사람을 우선 채택하도록 변경. 처음 찾을 때만 예외적으로 가장 큰 사람 선택</p></div>
+        </div>
+      </div>
+
+      <h3 class="sub" id="loop-open">아직 못 푼 것 — 로고 오인식과 위치 복귀</h3>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>트랙 위 로고를 선으로 착각</h4><span class="chip open">미해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>"가장 크게 잡힌 흰 덩어리 = 선"이라는 규칙이라, 원형 로고처럼 크고 흰 무늬가 실제 선보다 크게 잡히면 그쪽으로 잘못 인식</p></div>
+          <div class="cycle-col solution"><span class="k">시도했지만…</span><p>"크기 무시하고 직전 위치와 가장 가까운 것"으로 바꿔봤지만, 진짜 선을 눈앞에 두고도 못 찾는 더 나쁜 문제가 생겨 기존 방식(크기 우선 + 위치 참고)으로 되돌림</p></div>
+        </div>
+      </div>
+
+      <div class="cycle">
+        <div class="cycle-head"><h4>장애물 피한 뒤 정확히 원래 선으로 복귀</h4><span class="chip open">미해결</span></div>
+        <div class="cycle-body">
+          <div class="cycle-col problem"><span class="k">문제</span><p>GPS도 바퀴 오도메트리도 없어서 차가 "지금 정확히 어디에 있는지" 알 방법이 없음. 화면 속 좌표 기억은 실제 위치 정보가 아님</p></div>
+          <div class="cycle-col solution"><span class="k">대체 방안</span><p>정밀 복귀는 포기하고, <strong>장애물 감지 시 정지 → 사라지면 재출발</strong>로 설계 자체를 단순화. 회피 동작(후진/회전)도 하지 않기로 함 — 정확한 복귀가 안 되는 상황에서 회피까지 하면 트랙을 더 벗어날 위험만 커지기 때문</p></div>
+        </div>
+      </div>
+
+      <div class="callout"><div class="dot"></div><div><strong>공통 원인</strong> — 두 미해결 문제 모두 "화면에 지금 보이는 것"에만 의존하는 인식의 한계에서 온다. 03장, 04장에서 이어서 정리한다.</div></div>
+    </section>
+
+    <!-- ============ 03 결과 및 결론 ============ -->
+    <section class="block prose" id="result">
+      <div class="sec-head"><span class="sec-num">03</span><h2>결과 및 결론</h2></div>
+
+      <div class="final-grid">
+        <div class="final-card">
+          <span class="k">기능 1</span>
+          <h5 style="margin:6px 0 2px;font-size:16px">사람 따라가기</h5>
+          <p>YOLOv3-tiny + TensorRT (딥러닝) · 라이다 감지 시 회피 동작</p>
+        </div>
+        <div class="final-card">
+          <span class="k">기능 2</span>
+          <h5 style="margin:6px 0 2px;font-size:16px">라인트레이싱</h5>
+          <p>OpenCV 영상처리 (규칙 기반) · 라이다 감지 시 정지 후 재출발</p>
+        </div>
+      </div>
+
+      <h4 class="micro">두 가지 큰 트레이드오프</h4>
+      <div class="prose">
+        <ul>
+          <li><strong>정확도 vs 속도</strong> — 더 정확한 YOLOv4 대신, Jetson Nano에서도 실시간(30 FPS)이 가능한 YOLOv3-tiny를 택했다.</li>
+          <li><strong>안정성 vs 즉시성/단순함</strong> — 라이다를 별도 프로세스로 격리해 안정성을 얻은 대신, 파일을 거치는 데이터 공유로 인한 약간의 지연(최대 0.1초)과 감시자 구조의 관리 복잡도를 감수했다. "차가 안전장치 없이 갑자기 멈추는 것"보다 "라이다 반응이 0.1초 늦는 것"이 훨씬 나은 선택이었다.</li>
+        </ul>
+      </div>
+
+      <blockquote class="pull">이번 프로젝트의 가장 큰 한계는 한마디로 — 차가 자기 위치를 정확히 모른다는 것.</blockquote>
+      <p>GPS도, 바퀴 회전 기반 위치 계산도 없다 보니, 장애물 피한 뒤 복귀하기나 흔들림 없이 계속 추적하기 같은 기능들이 전부 "지금 카메라에 뭐가 보이는지"에만 의존하는 대략적인 방식에 머물렀다. "직전 위치 기억하기" 방식은 크기·모양 같은 별도 검증 기준 없이는 한 번 엉뚱한 것에 붙잡히면 계속 그 근처에서만 맴도는 약점이 있는데, 이는 라인트레이싱뿐 아니라 사람 추적(AUTO 모드)에도 똑같이 잠재된 위험이다.</p>
+    </section>
+
+    <!-- ============ 04 향후 진행 방향 ============ -->
+    <section class="block prose" id="next">
+      <div class="sec-head"><span class="sec-num">04</span><h2>향후 진행 방향</h2></div>
+      <p class="sec-intro">계속 이어간다면 아래 순서로 진행하는 걸 추천한다 — 근본 한계(위치 인식)를 건드리는 것이 가장 우선이고, 나머지는 각자 독립적으로 진행 가능하다.</p>
+
+      <div class="roadmap">
+        <div class="road-item">
+          <div class="road-pri">최우선</div>
+          <div class="road-body">
+            <h5>IMU로 대략적인 위치·방향 추정 추가</h5>
+            <p>이미 달려있는 자이로/가속도 센서(IMU)를 활용해 대략적인 방향이라도 계산하거나, 바퀴 회전 기반 거리 추정을 더하면 "위치를 모른다"는 근본 한계를 넘는 데 가장 효과적이다. 이게 되면 장애물 회피 후 정밀 복귀, 흔들림 없는 추적 두 가지 미해결 문제의 실마리가 동시에 풀린다.</p>
+          </div>
+        </div>
+        <div class="road-item">
+          <div class="road-pri">다음</div>
+          <div class="road-body">
+            <h5>라인 인식에 형태(종횡비) 필터 추가</h5>
+            <p>트랙 로고 오인식 문제는 "가늘고 긴 모양만 선으로 인정"하는 형태 기반 필터로 재시도해볼 것. 크기 비교만으로는 한계가 명확히 확인된 상태라, 모양 정보를 새로 추가하는 방향이 필요하다.</p>
+          </div>
+        </div>
+        <div class="road-item">
+          <div class="road-pri">운영</div>
+          <div class="road-body">
+            <h5>daemon(systemctl) 등록</h5>
+            <p>Jetson이 세션 중 몇 차례 예고 없이 재부팅됐다. 전원이 켜지면 launcher가 자동으로 다시 시작되도록 등록해두면, 재부팅 시에도 폰만으로 복구할 수 있다.</p>
+          </div>
+        </div>
+        <div class="road-item">
+          <div class="road-pri">확인</div>
+          <div class="road-body">
+            <h5>남은 자잘한 미완료 항목</h5>
+            <p>다른 사람 폰에서 웹뷰 접속이 안 되는 문제(네트워크/IP 확인 필요), GitHub 팀 저장소 정리 커밋 반영(<code>git push team team-cleanup:main</code>, 인증 문제로 직접 실행 필요), TrtYOLO 초기화 시간(15초+)이 긴 것 — 데모 전에 감안하거나 LINE 모드일 땐 YOLO를 아예 안 불러오도록 분기 처리하는 것도 고려할 만하다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page-foot">
+      오토카 자율주행 프로젝트 종합 보고서 · <code class="mono">오토카_종합.md</code>, <code class="mono">YOLO_작업일지.md</code> 기반으로 정리
+    </footer>
+  </main>
+</div>
